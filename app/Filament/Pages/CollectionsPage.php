@@ -17,6 +17,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Storage;
 
 class CollectionsPage extends Page implements HasTable
 {
@@ -32,6 +33,120 @@ class CollectionsPage extends Page implements HasTable
     private function getRekognition(): RekognitionService
     {
         return app(RekognitionService::class);
+    }
+
+    /**
+     * Contar fotos en la carpeta storage/app/public/fotos
+     */
+    public function countPhotos(): int
+    {
+        try {
+            $disk = Storage::disk('public');
+            $files = $disk->files('fotos');
+
+            // Filtrar solo archivos de imagen
+            $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            $photoCount = 0;
+
+            foreach ($files as $file) {
+                $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                if (in_array($extension, $imageExtensions)) {
+                    $photoCount++;
+                }
+            }
+
+            return $photoCount;
+        } catch (\Exception $e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Indexar fotos de la carpeta en la colección
+     */
+    public function indexPhotosFromFolder(): void
+    {
+        try {
+            $photoCount = $this->countPhotos();
+
+            if ($photoCount === 0) {
+                Notification::make()
+                    ->title('⚠️ Sin fotos')
+                    ->body('No hay fotos en la carpeta storage/app/public/fotos')
+                    ->warning()
+                    ->send();
+                return;
+            }
+
+            $disk = Storage::disk('public');
+            $files = $disk->files('fotos');
+            $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            $indexed = 0;
+            $failed = 0;
+
+            $rekognition = $this->getRekognition();
+
+            // Obtener la primera colección activa
+            $collection = RekognitionCollection::where('is_active', true)->first();
+
+            if (!$collection) {
+                Notification::make()
+                    ->title('❌ Error')
+                    ->body('No hay colecciones activas. Crea una primero.')
+                    ->danger()
+                    ->send();
+                return;
+            }
+
+            foreach ($files as $file) {
+                $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+
+                if (!in_array($extension, $imageExtensions)) {
+                    continue;
+                }
+
+                try {
+                    $imagePath = storage_path('app/public/' . $file);
+
+                    if (file_exists($imagePath)) {
+                        // Convertir imagen a base64
+                        $imageData = base64_encode(file_get_contents($imagePath));
+
+                        // Indexar la foto
+                        $result = $rekognition->indexFace(
+                            collectionId: $collection->collection_id,
+                            externalImageId: basename($file),
+                            imageData: $imageData,
+                            isBase64: true
+                        );
+
+                        if ($result['success']) {
+                            $indexed++;
+                        } else {
+                            $failed++;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    $failed++;
+                }
+            }
+
+            // Actualizar contador de rostros en la colección
+            $collection->increment('faces_count', $indexed);
+
+            Notification::make()
+                ->title('✅ Indexación completada')
+                ->body("Se indexaron $indexed fotos correctamente. Fallidas: $failed")
+                ->success()
+                ->send();
+
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('❌ Error')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
     }
 
     public function mount(): void
@@ -252,6 +367,16 @@ class CollectionsPage extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('index-photos')
+                ->label('📸 Indexar Fotos (' . $this->countPhotos() . ')')
+                ->icon('heroicon-m-photo')
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading('Indexar Fotos')
+                ->modalDescription('Se indexarán todas las fotos de la carpeta storage/app/public/fotos en la primera colección activa')
+                ->modalSubmitActionLabel('Sí, indexar')
+                ->action(fn () => $this->indexPhotosFromFolder()),
+
             Action::make('create')
                 ->label('Crear Colección')
                 ->icon('heroicon-m-plus')
