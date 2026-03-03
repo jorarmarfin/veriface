@@ -1,0 +1,3 @@
+- No generes archivos markdown adicionales de explicación
+- No crees test unitarios a menos que se te solicite
+- No interactues con git a menos que se te solicite
