@@ -2,19 +2,32 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Pages\Schemas\CollectionsForm;
+use App\Filament\Pages\Tables\CollectionsTable;
 use App\Services\RekognitionService;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use BackedEnum;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Concerns\InteractsWithTable;
+use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Table;
 
-class CollectionsPage extends Page
+class CollectionsPage extends Page implements HasTable
 {
+    use InteractsWithTable;
     protected string $view = 'filament.pages.collections-page';
     protected static ?int $navigationSort = 1;
     protected static string|BackedEnum|null $navigationIcon = Heroicon::CircleStack;
     protected static ?string $title = 'Gestión de Colecciones';
-    public RekognitionService $rekognition;
+    private RekognitionService $rekognition;
+
+
+    public function table(Table $table): Table
+    {
+        return CollectionsTable::configure($table, $this->collections);
+    }
 
     public function mount(): void
     {
