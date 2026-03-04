@@ -11,7 +11,7 @@
     <div class="w-full h-screen flex flex-col">
         <!-- Header -->
         <header class="bg-slate-950 border-b border-slate-700 shadow-lg">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-3">
                         <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
@@ -33,11 +33,11 @@
 
         <!-- Main Content -->
         <main class="flex-1 overflow-hidden">
-            <div class="max-w-7xl mx-auto w-full h-full px-4 sm:px-6 lg:px-8 py-6">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+            <div class="max-w-7xl mx-auto w-full h-full px-4 sm:px-6 lg:px-8 py-3">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 h-full">
 
                     <!-- Left Panel - Camera Section -->
-                    <div class="flex flex-col space-y-4">
+                    <div class="flex flex-col space-y-2">
                         <!-- Camera Feed Container -->
                         <div class="flex-1 bg-slate-950 border-2 border-slate-700 rounded-xl overflow-hidden shadow-2xl hover:border-blue-500 transition-colors">
                             <div class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
@@ -65,13 +65,13 @@
 
                         <!-- Control Buttons -->
                         <div class="flex flex-col sm:flex-row gap-3">
-                            <button id="analyze-btn" class="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                            <button id="analyze-btn" class="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                 </svg>
                                 <span>Analizar Rostro</span>
                             </button>
-                            <button id="cancel-btn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                            <button id="cancel-btn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                                 </svg>
@@ -80,8 +80,8 @@
                         </div>
 
                         <!-- Camera Info -->
-                        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-                            <div class="flex items-center space-x-2 mb-2">
+                        <div class="bg-slate-800 border border-slate-700 rounded-lg p-3">
+                            <div class="flex items-center space-x-2 mb-1">
                                 <svg class="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"></path>
                                 </svg>
@@ -105,7 +105,7 @@
                     </div>
 
                     <!-- Right Panel - Information Section -->
-                    <div class="flex flex-col space-y-4">
+                    <div class="flex flex-col space-y-2">
                         <!-- Initial State - No results -->
                         <div id="initial-state" class="flex-1 bg-slate-800 border-2 border-slate-700 rounded-xl p-6 shadow-2xl flex flex-col items-center justify-center">
                             <div class="text-center">
@@ -118,10 +118,10 @@
                         </div>
 
                         <!-- Results Card (hidden initially) -->
-                        <div id="results-state" class="hidden flex-1 flex flex-col space-y-4 overflow-auto">
-                            <div class="bg-slate-800 border-2 border-green-500 rounded-xl p-6 shadow-2xl">
-                                <div class="flex items-center justify-between mb-6">
-                                    <h2 class="text-lg font-bold text-white">Información Encontrada</h2>
+                        <div id="results-state" class="hidden flex-1 flex flex-col space-y-2 overflow-auto">
+                            <div class="bg-slate-800 border-2 border-green-500 rounded-xl p-4 shadow-2xl">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h2 class="text-base font-bold text-white">Información Encontrada</h2>
                                     <div class="w-10 h-10 bg-green-500 bg-opacity-20 rounded-lg flex items-center justify-center">
                                         <svg class="w-6 h-6 text-green-400" fill="currentColor" viewBox="0 0 20 20">
                                             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
@@ -130,7 +130,7 @@
                                 </div>
 
                                 <!-- Confidence Score -->
-                                <div class="mb-6 pb-6 border-b border-slate-700">
+                                <div class="mb-4 pb-4 border-b border-slate-700">
                                     <div class="flex items-center justify-between mb-2">
                                         <span class="text-sm text-slate-300 font-semibold">Similitud</span>
                                         <span class="text-2xl font-bold text-green-400" id="similarity-score">92%</span>
@@ -142,9 +142,9 @@
                                 </div>
 
                                 <!-- Personal Information with Photo -->
-                                <div class="flex flex-col lg:flex-row gap-6">
+                                <div class="flex flex-col lg:flex-row gap-4">
                                     <!-- Left Column - Personal Data -->
-                                    <div class="flex-1 space-y-4">
+                                    <div class="flex-1 space-y-3">
                                         <div>
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Nombres</p>
                                             <p class="text-base text-white font-semibold" id="person-names">-</p>
@@ -177,7 +177,7 @@
                                     <div id="photo-section" class="hidden lg:flex lg:flex-shrink-0">
                                         <div class="bg-slate-700 border border-slate-600 rounded-lg overflow-hidden flex flex-col items-center justify-center p-2" style="width: 300px;">
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-3 text-center">Foto Registrada</p>
-                                            <img id="person-photo" src="" alt="Foto de la persona" class="w-full h-80 object-cover rounded">
+                                            <img id="person-photo" src="" alt="Foto de la persona" class="w-full h-64 object-cover rounded">
                                         </div>
                                     </div>
                                 </div>
@@ -185,13 +185,13 @@
 
                             <!-- Action Buttons -->
                             <div class="grid grid-cols-2 gap-3">
-                                <button id="confirm-btn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                                <button id="confirm-btn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                     </svg>
                                     <span>Confirmar</span>
                                 </button>
-                                <button id="retry-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                                <button id="retry-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                                     </svg>
@@ -201,7 +201,7 @@
                         </div>
 
                         <!-- No Match State (hidden) -->
-                        <div id="no-match-state" class="hidden flex-1 bg-slate-800 border-2 border-red-500 rounded-xl p-6 shadow-2xl flex flex-col items-center justify-center">
+                        <div id="no-match-state" class="hidden flex-1 bg-slate-800 border-2 border-red-500 rounded-xl p-4 shadow-2xl flex flex-col items-center justify-center">
                             <div class="w-16 h-16 bg-red-500 bg-opacity-20 rounded-lg flex items-center justify-center mb-4">
                                 <svg class="w-8 h-8 text-red-400" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
@@ -215,8 +215,8 @@
                         </div>
 
                         <!-- Status Section -->
-                        <div id="status-section" class="bg-slate-800 border border-slate-700 rounded-lg p-4">
-                            <div class="flex items-center space-x-2 mb-3">
+                        <div id="status-section" class="bg-slate-800 border border-slate-700 rounded-lg p-3">
+                            <div class="flex items-center space-x-2 mb-2">
                                 <svg class="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"></path>
                                 </svg>
