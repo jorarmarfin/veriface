@@ -24,6 +24,12 @@ class ValidateController extends Controller
         // Obtener institución por UUID
         $institution = Institution::where('uuid', $uuid)->firstOrFail();
 
+        // Validar si la institución está activa
+        if (!$institution->is_active) {
+            return view('validate.inactive', [
+                'institution' => $institution,
+            ]);
+        }
 
         return view('validate.index', [
             'institution' => $institution,
