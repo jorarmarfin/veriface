@@ -42,5 +42,71 @@
 
     {{-- Tabla de colecciones --}}
     {{ $this->table }}
+
+    {{-- Resultados de búsqueda --}}
+    @if ($showSearchResults && !empty($searchResults))
+        <div class="mt-8">
+            <div class="rounded-lg border border-gray-200 dark:border-gray-700 p-6 bg-white dark:bg-gray-900">
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                            📊 Resultados de Búsqueda
+                        </h2>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Foto: <strong>{{ $lastSearchedImage }}</strong>
+                        </p>
+                    </div>
+                </div>
+
+                {{-- Resultados por colección --}}
+                <div class="space-y-4">
+                    @foreach ($searchResults as $collectionResult)
+                        <div class="rounded-lg border border-gray-100 dark:border-gray-800 p-4 bg-gray-50 dark:bg-gray-800/50">
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                                📁 {{ $collectionResult['collection_name'] }}
+                                <span class="ml-2 px-3 py-1 inline-block text-sm font-bold text-white bg-green-600 rounded-full">
+                                    {{ $collectionResult['match_count'] }} coincidencia(s)
+                                </span>
+                            </h3>
+
+                            {{-- Lista de coincidencias --}}
+                            <div class="space-y-2">
+                                @foreach ($collectionResult['matches'] as $match)
+                                    <div class="flex items-center justify-between p-3 rounded-lg bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
+                                        <div>
+                                            <p class="font-medium text-gray-900 dark:text-white">
+                                                📸 {{ $match['external_image_id'] ?? 'ID: ' . substr($match['face_id'], 0, 8) . '...' }}
+                                            </p>
+                                            <p class="text-sm text-gray-500 dark:text-gray-400">
+                                                Face ID: {{ substr($match['face_id'], 0, 12) }}...
+                                            </p>
+                                        </div>
+                                        <div class="text-right">
+                                            @php
+                                                $similarity = $match['similarity'];
+                                                $bgColor = $similarity >= 90 ? 'bg-green-600' : ($similarity >= 80 ? 'bg-blue-600' : 'bg-orange-600');
+                                            @endphp
+                                            <span class="inline-block px-3 py-1 text-sm font-bold text-white rounded-full {{ $bgColor }}">
+                                                {{ number_format($match['similarity'], 2) }}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                {{-- Botón para limpiar resultados --}}
+                <div class="mt-6 flex justify-end">
+                    <button
+                        wire:click="resetSearchResults"
+                        class="px-4 py-2 rounded-lg bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-white font-medium hover:bg-gray-400 dark:hover:bg-gray-700 transition">
+                        Limpiar Resultados
+                    </button>
+                </div>
+            </div>
+        </div>
+    @endif
 </x-filament-panels::page>
 

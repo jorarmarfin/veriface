@@ -17,6 +17,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
+use Filament\Forms\Components\FileUpload;
 use Illuminate\Support\Facades\Storage;
 
 class CollectionsPage extends Page implements HasTable
@@ -29,6 +30,120 @@ class CollectionsPage extends Page implements HasTable
     protected static ?string $title = 'Gestión de Colecciones';
 
     public bool $loading = false;
+    public array $searchResults = [];
+    public bool $showSearchResults = false;
+    public ?string $lastSearchedImage = null;
+
+    /**
+     * Buscar rostro en una imagen subida dentro de las colecciones activas
+     */
+    public function searchFaceInPhoto(array $data): void
+    {
+        try {
+            $this->loading = true;
+            $this->searchResults = [];
+
+            // Validar que hay un archivo subido
+            if (empty($data['photo_file'])) {
+                Notification::make()
+                    ->title('⚠️ Sin archivo')
+                    ->body('Por favor sube una foto para buscar')
+                    ->warning()
+                    ->send();
+                return;
+            }
+
+            // Obtener la ruta del archivo temporal subido
+            $filePath = storage_path('app/private/' . $data['photo_file']);
+
+            // Si no existe en livewire-tmp, intentar en uploads
+            if (!file_exists($filePath)) {
+                $filePath = storage_path('app/' . $data['photo_file']);
+            }
+
+            if (!file_exists($filePath)) {
+                Notification::make()
+                    ->title('❌ Error')
+                    ->body('El archivo no existe')
+                    ->danger()
+                    ->send();
+                return;
+            }
+
+            // Obtener nombre del archivo para mostrarlo
+            $fileName = basename($filePath);
+
+            // Convertir a base64
+            $imageData = base64_encode(file_get_contents($filePath));
+            $rekognition = $this->getRekognition();
+
+            // Obtener todas las colecciones activas
+            $collections = RekognitionCollection::where('is_active', true)->get();
+
+            if ($collections->isEmpty()) {
+                Notification::make()
+                    ->title('❌ Error')
+                    ->body('No hay colecciones activas. Crea una primero.')
+                    ->danger()
+                    ->send();
+                return;
+            }
+
+            // Buscar en cada colección
+            $allMatches = [];
+            foreach ($collections as $collection) {
+                $result = $rekognition->searchFacesByImage(
+                    collectionId: $collection->collection_id,
+                    imageData: $imageData,
+                    isBase64: true,
+                    faceMatchThreshold: 80,
+                    maxFaces: 10
+                );
+
+                if ($result['success'] && !empty($result['matches'])) {
+                    $allMatches[] = [
+                        'collection_id' => $collection->collection_id,
+                        'collection_name' => $collection->name,
+                        'matches' => $result['matches'],
+                        'match_count' => $result['match_count']
+                    ];
+                }
+            }
+
+            $this->lastSearchedImage = $fileName;
+            $this->searchResults = $allMatches;
+            $this->showSearchResults = true;
+
+            if (empty($allMatches)) {
+                Notification::make()
+                    ->title('ℹ️ Sin coincidencias')
+                    ->body("No se encontraron rostros similares en ninguna colección")
+                    ->info()
+                    ->send();
+            } else {
+                Notification::make()
+                    ->title('✅ Búsqueda completada')
+                    ->body(count($allMatches) . ' colección(es) con coincidencias encontrada(s)')
+                    ->success()
+                    ->send();
+            }
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('❌ Error')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        } finally {
+            $this->loading = false;
+        }
+    }
+
+    public function resetSearchResults(): void
+    {
+        $this->searchResults = [];
+        $this->showSearchResults = false;
+        $this->lastSearchedImage = null;
+    }
 
     private function getRekognition(): RekognitionService
     {
@@ -367,6 +482,27 @@ class CollectionsPage extends Page implements HasTable
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('search-face')
+                ->label('🔍 Buscar Rostro')
+                ->icon('heroicon-m-magnifying-glass')
+                ->color('primary')
+                ->modalHeading('Buscar Rostro en Colecciones')
+                ->modalDescription('Sube una foto para buscar rostros similares en todas las colecciones activas')
+                ->schema([
+                    FileUpload::make('photo_file')
+                        ->label('Selecciona una foto')
+                        ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+                        ->image()
+                        ->imagePreviewHeight('200')
+                        ->disk('local')
+                        ->directory('livewire-tmp')
+                        ->visibility('private')
+                        ->required()
+                        ->columnSpanFull(),
+
+                ])
+                ->action(fn (array $data) => $this->searchFaceInPhoto($data)),
+
             Action::make('index-photos')
                 ->label('📸 Indexar Fotos (' . $this->countPhotos() . ')')
                 ->icon('heroicon-m-photo')
