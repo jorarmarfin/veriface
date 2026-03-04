@@ -173,19 +173,11 @@
                                         </div>
                                     </div>
 
-                                    <!-- Right Column - Photo -->
+                                    <!-- Right Column - Photo (Responsive) -->
                                     <div id="photo-section" class="hidden lg:block">
-                                        <div class="bg-slate-700 border border-slate-600 rounded-lg overflow-hidden h-full flex flex-col items-center justify-center p-2">
+                                        <div class="bg-slate-700 border border-slate-600 rounded-lg overflow-hidden flex flex-col items-center justify-center p-2">
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-3 text-center">Foto Registrada</p>
                                             <img id="person-photo" src="" alt="Foto de la persona" class="w-full h-80 object-cover rounded">
-                                        </div>
-                                    </div>
-
-                                    <!-- Mobile Photo Section -->
-                                    <div id="photo-section-mobile" class="hidden lg:hidden col-span-1">
-                                        <div class="bg-slate-700 border border-slate-600 rounded-lg overflow-hidden p-2">
-                                            <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-3 text-center">Foto Registrada</p>
-                                            <img id="person-photo-mobile" src="" alt="Foto de la persona" class="w-32 h-40 object-cover rounded mx-auto">
                                         </div>
                                     </div>
                                 </div>
@@ -410,7 +402,6 @@
 
             // Mostrar foto si existe
             if (data.photo_url) {
-                // Versión desktop
                 const photoImg = document.getElementById('person-photo');
                 photoImg.src = data.photo_url;
                 photoImg.onerror = function() {
@@ -418,18 +409,8 @@
                     this.classList.add('opacity-50');
                 };
                 document.getElementById('photo-section').classList.remove('hidden');
-
-                // Versión mobile
-                const photoImgMobile = document.getElementById('person-photo-mobile');
-                photoImgMobile.src = data.photo_url;
-                photoImgMobile.onerror = function() {
-                    this.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" class="w-32 h-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"%3E%3Cpath stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/%3E%3C/svg%3E';
-                    this.classList.add('opacity-50');
-                };
-                document.getElementById('photo-section-mobile').classList.remove('hidden');
             } else {
                 document.getElementById('photo-section').classList.add('hidden');
-                document.getElementById('photo-section-mobile').classList.add('hidden');
             }
 
             // Actualizar estado
