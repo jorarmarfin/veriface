@@ -4,6 +4,8 @@ namespace App\Filament\Resources\Institutions\Pages;
 
 use App\Imports\PeopleImport;
 use Filament\Actions\Action;
+use Filament\Actions\BulkActionGroup;
+use Filament\Actions\DeleteBulkAction;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -50,6 +52,11 @@ class PeopleRelationManager extends RelationManager
             ])
             ->filters([
                 //
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    DeleteBulkAction::make(),
+                ]),
             ])
             ->headerActions([
                 Action::make('download_template')
@@ -120,4 +127,5 @@ class PeopleRelationManager extends RelationManager
         }
     }
 }
+
 
