@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\Institutions;
 
 use App\Filament\Resources\Institutions\Pages\ManageInstitutions;
+use App\Filament\Resources\Institutions\Pages\CreateInstitutions;
+use App\Filament\Resources\Institutions\Pages\EditInstitutions;
 use App\Models\Institution;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -128,6 +130,15 @@ class InstitutionResource extends Resource
                     })
                     ->alignment('center')
                     ->sortable(false),
+                TextColumn::make('people_count')
+                    ->label('👥 Postulantes')
+                    ->state(function (Institution $record): string {
+                        return (string) $record->people()->count();
+                    })
+                    ->alignment('center')
+                    ->sortable(false)
+                    ->badge()
+                    ->color('info'),
                 IconColumn::make('is_active')
                     ->boolean(),
                 TextColumn::make('created_at')
@@ -154,8 +165,8 @@ class InstitutionResource extends Resource
                     ->action(function (Institution $record) {
                         self::indexInstitutionPhotos($record);
                     }),
-                EditAction::make(),
-                DeleteAction::make(),
+                EditAction::make()
+                    ->url(fn(Institution $record) => static::getUrl('edit', ['record' => $record->id])),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -168,6 +179,15 @@ class InstitutionResource extends Resource
     {
         return [
             'index' => ManageInstitutions::route('/'),
+            'create' => CreateInstitutions::route('/create'),
+            'edit' => EditInstitutions::route('/{record}/edit'),
+        ];
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            Pages\PeopleRelationManager::class,
         ];
     }
 
