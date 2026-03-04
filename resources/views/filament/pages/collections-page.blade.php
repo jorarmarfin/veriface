@@ -97,6 +97,37 @@
                     @endforeach
                 </div>
 
+                {{-- Respuesta JSON de Rekognition --}}
+                @if (!empty($rekognitionResponse))
+                    <div class="mt-6 border-t border-gray-200 dark:border-gray-700 pt-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                                📋 Respuesta JSON de AWS Rekognition
+                            </h3>
+                            <details class="cursor-pointer">
+                                <summary class="select-none px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded">
+                                    Ver/Ocultar JSON
+                                </summary>
+                                <div class="mt-4 space-y-4">
+                                    @foreach ($rekognitionResponse as $response)
+                                        <div class="rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 overflow-hidden">
+                                            <div class="bg-gray-200 dark:bg-gray-700 px-4 py-3 border-b border-gray-300 dark:border-gray-600">
+                                                <h4 class="font-semibold text-gray-900 dark:text-white text-sm">
+                                                    📁 {{ $response['collection_name'] }}
+                                                    <span class="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                                                        {{ $response['timestamp']->format('d/m/Y H:i:s') }}
+                                                    </span>
+                                                </h4>
+                                            </div>
+                                            <pre class="p-4 text-xs overflow-x-auto text-gray-800 dark:text-gray-200 font-mono">{{ json_encode($response['response'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                @endif
+
                 {{-- Botón para limpiar resultados --}}
                 <div class="mt-6 flex justify-end">
                     <button

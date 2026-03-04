@@ -27,7 +27,7 @@ return new class extends Migration
             $table->boolean('matched')->default(false);
 
             // fecha real de validación
-            $table->timestamp('validated_at');
+            $table->timestamp('validated_at')->nullable();
 
             $table->timestamps();
         });

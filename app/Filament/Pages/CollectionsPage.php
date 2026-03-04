@@ -33,6 +33,7 @@ class CollectionsPage extends Page implements HasTable
     public array $searchResults = [];
     public bool $showSearchResults = false;
     public ?string $lastSearchedImage = null;
+    public array $rekognitionResponse = [];
 
     /**
      * Buscar rostro en una imagen subida dentro de las colecciones activas
@@ -108,6 +109,14 @@ class CollectionsPage extends Page implements HasTable
                         'match_count' => $result['match_count']
                     ];
                 }
+
+                // Guardar la respuesta JSON completa de Rekognition
+                $this->rekognitionResponse[] = [
+                    'collection_id' => $collection->collection_id,
+                    'collection_name' => $collection->name,
+                    'timestamp' => now(),
+                    'response' => $result,
+                ];
             }
 
             $this->lastSearchedImage = $fileName;
@@ -143,6 +152,7 @@ class CollectionsPage extends Page implements HasTable
         $this->searchResults = [];
         $this->showSearchResults = false;
         $this->lastSearchedImage = null;
+        $this->rekognitionResponse = [];
     }
 
     private function getRekognition(): RekognitionService

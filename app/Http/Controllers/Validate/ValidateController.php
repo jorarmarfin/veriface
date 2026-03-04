@@ -225,13 +225,17 @@ class ValidateController extends Controller
 
             $bestMatch = $matches[0];
             $similarity = $bestMatch['similarity'] ?? 0;
-            $externalImageId = $bestMatch['face']['external_image_id'] ?? null;
+            $externalImageIdRaw = $bestMatch['face']['external_image_id'] ?? null;
             $faceId = $bestMatch['face']['face_id'] ?? null;
+
+            // Remover extensión .jpg del external_image_id para obtener document_number
+            $externalImageId = pathinfo($externalImageIdRaw, PATHINFO_FILENAME);
 
             Log::info("📊 Detalles de mejor coincidencia [{$requestId}]", [
                 'similarity' => $similarity,
                 'face_id' => $faceId,
-                'external_image_id' => $externalImageId,
+                'external_image_id_raw' => $externalImageIdRaw,
+                'external_image_id_cleaned' => $externalImageId,
                 'confidence' => $bestMatch['confidence'] ?? null,
             ]);
 
@@ -260,6 +264,7 @@ class ValidateController extends Controller
                     'document_number' => $externalImageId,
                     'similarity' => $similarity,
                     'matched' => false,
+                    'validated_at' => now(),
                 ]);
 
                 return response()->json([
@@ -286,6 +291,7 @@ class ValidateController extends Controller
                 'document_number' => $person->document_number,
                 'similarity' => $similarity,
                 'matched' => true,
+                'validated_at' => now(),
             ]);
 
             Log::info("✅ Validación registrada [{$requestId}]", [
