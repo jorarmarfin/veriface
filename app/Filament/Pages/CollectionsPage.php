@@ -5,7 +5,6 @@ namespace App\Filament\Pages;
 use App\Models\RekognitionCollection;
 use App\Services\RekognitionService;
 use Filament\Actions\Action;
-
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -247,6 +246,27 @@ class CollectionsPage extends Page implements HasTable
 
                         if ($result['success']) {
                             $indexed++;
+
+                            // Registrar la imagen indexada en la base de datos
+                            try {
+                                \App\Models\RekognitionIndexedImage::create([
+                                    'uuid' => \Illuminate\Support\Str::uuid(),
+                                    'rekognition_collection_id' => $collection->id,
+                                    'person_id' => null,
+                                    'face_id' => $result['face_id'] ?? '',
+                                    'image_path' => $file,
+                                    'image_name' => basename($file),
+                                    'confidence' => $result['confidence'] ?? null,
+                                    'face_details' => $result['face_details'] ?? null,
+                                    'is_active' => true,
+                                    'indexed_at' => now(),
+                                ]);
+                            } catch (\Exception $e) {
+                                \Log::warning('Error registrando imagen indexada', [
+                                    'file' => basename($file),
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
                         } else {
                             $failed++;
                         }
@@ -307,6 +327,9 @@ class CollectionsPage extends Page implements HasTable
                     );
                 }
 
+                // Sincronizar también las imágenes indexadas
+                $this->syncIndexedImagesFromAWS();
+
                 Notification::make()
                     ->title('Colecciones sincronizadas')
                     ->body('Se sincronizaron las colecciones desde AWS')
@@ -327,6 +350,60 @@ class CollectionsPage extends Page implements HasTable
                 ->send();
         } finally {
             $this->loading = false;
+        }
+    }
+
+    /**
+     * Sincronizar imágenes indexadas desde AWS
+     */
+    public function syncIndexedImagesFromAWS(): void
+    {
+        try {
+            $rekognition = $this->getRekognition();
+            $collections = RekognitionCollection::where('is_active', true)->get();
+
+            foreach ($collections as $collection) {
+                try {
+                    // Listar rostros de la colección
+                    $result = $rekognition->listFaces($collection->collection_id, maxResults: 1000);
+
+                    if ($result['success']) {
+                        foreach ($result['faces'] ?? [] as $face) {
+                            // Verificar si la imagen ya existe
+                            $existingImage = \App\Models\RekognitionIndexedImage::where(
+                                'face_id',
+                                $face['FaceId']
+                            )->first();
+
+                            if (!$existingImage) {
+                                // Crear registro de imagen indexada
+                                \App\Models\RekognitionIndexedImage::create([
+                                    'uuid' => \Illuminate\Support\Str::uuid(),
+                                    'rekognition_collection_id' => $collection->id,
+                                    'person_id' => null,
+                                    'face_id' => $face['FaceId'],
+                                    'image_path' => $face['ExternalImageId'] ?? '',
+                                    'image_name' => basename($face['ExternalImageId'] ?? ''),
+                                    'confidence' => $face['Confidence'] ?? null,
+                                    'face_details' => json_encode($face) ?? null,
+                                    'is_active' => true,
+                                    'indexed_at' => now(),
+                                ]);
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    \Log::warning("Error sincronizando imágenes de colección {$collection->collection_id}", [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            \Log::info('Sincronización de imágenes indexadas completada');
+        } catch (\Exception $e) {
+            \Log::error('Error en sincronización de imágenes indexadas', [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -448,31 +525,7 @@ class CollectionsPage extends Page implements HasTable
                     ->label('Ver Detalles')
                     ->icon('heroicon-o-eye')
                     ->color('info')
-                    ->modalHeading('Detalles de la colección')
-                    ->schema(fn ($record) => [
-                        Section::make('Información')
-                            ->schema([
-                                TextInput::make('collection_id')
-                                    ->label('ID')
-                                    ->default($record->collection_id)
-                                    ->disabled(),
-
-                                TextInput::make('faces_count')
-                                    ->label('Rostros')
-                                    ->default($record->faces_count)
-                                    ->disabled(),
-
-                                TextInput::make('face_model_version')
-                                    ->label('Versión Modelo')
-                                    ->default($record->face_model_version)
-                                    ->disabled(),
-
-                                TextInput::make('collection_arn')
-                                    ->label('ARN')
-                                    ->default($record->collection_arn)
-                                    ->disabled(),
-                            ]),
-                    ]),
+                    ->url(fn ($record) => \App\Filament\Resources\RekognitionCollectionResource::getUrl('view', ['record' => $record->id])),
 
                 Action::make('delete')
                     ->label('Eliminar')
@@ -486,12 +539,23 @@ class CollectionsPage extends Page implements HasTable
             ]);
     }
 
+
     /**
      * Acciones de página con botón de crear colección
      */
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('sync-indexed-images')
+                ->label('🔄 Sincronizar Imágenes')
+                ->icon('heroicon-m-arrow-path')
+                ->color('info')
+                ->requiresConfirmation()
+                ->modalHeading('Sincronizar Imágenes Indexadas')
+                ->modalDescription('Se sincronizarán todas las imágenes indexadas desde AWS Rekognition con la base de datos')
+                ->modalSubmitActionLabel('Sí, sincronizar')
+                ->action(fn () => $this->handleSyncIndexedImages()),
+
             Action::make('search-face')
                 ->label('🔍 Buscar Rostro')
                 ->icon('heroicon-m-magnifying-glass')
@@ -550,5 +614,27 @@ class CollectionsPage extends Page implements HasTable
                 ])
                 ->action(fn (array $data) => $this->createCollection($data)),
         ];
+    }
+
+    /**
+     * Manejar sincronización de imágenes indexadas
+     */
+    public function handleSyncIndexedImages(): void
+    {
+        try {
+            $this->syncIndexedImagesFromAWS();
+
+            Notification::make()
+                ->title('✅ Sincronización completada')
+                ->body('Las imágenes indexadas han sido sincronizadas correctamente')
+                ->success()
+                ->send();
+        } catch (\Exception $e) {
+            Notification::make()
+                ->title('❌ Error')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        }
     }
 }

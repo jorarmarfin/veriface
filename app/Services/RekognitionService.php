@@ -483,6 +483,55 @@ class RekognitionService
     }
 
     /**
+     * Listar todos los rostros indexados en una colección
+     *
+     * @param string $collectionId ID de la colección
+     * @param int $maxResults Máximo de resultados a retornar (1-1000)
+     * @param string|null $nextToken Token para paginación
+     * @return array Lista de rostros indexados
+     */
+    public function listFaces(string $collectionId, int $maxResults = 1000, ?string $nextToken = null): array
+    {
+        try {
+            $params = [
+                'CollectionId' => $collectionId,
+                'MaxResults' => min($maxResults, 1000)
+            ];
+
+            if ($nextToken) {
+                $params['NextToken'] = $nextToken;
+            }
+
+            $response = $this->client->listFaces($params);
+
+            Log::info("AWS Rekognition: Se listaron rostros de la colección '{$collectionId}'", [
+                'face_count' => count($response['Faces'] ?? []),
+                'status_code' => $response['@metadata']['statusCode'] ?? 200
+            ]);
+
+            return [
+                'success' => true,
+                'faces' => $response['Faces'] ?? [],
+                'next_token' => $response['NextToken'] ?? null,
+                'face_count' => count($response['Faces'] ?? []),
+                'message' => 'Rostros listados correctamente'
+            ];
+        } catch (AwsException $e) {
+            Log::error("Error listando rostros en AWS Rekognition: {$e->getMessage()}", [
+                'collection_id' => $collectionId,
+                'error_code' => $e->getAwsErrorCode()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getAwsErrorCode(),
+                'message' => $e->getMessage(),
+                'faces' => []
+            ];
+        }
+    }
+
+    /**
      * Obtener el cliente de Rekognition
      *
      * @return RekognitionClient

@@ -24,7 +24,7 @@ class ValidationLogResource extends Resource
 {
     protected static ?string $model = ValidationLog::class;
     protected static ?string $modelLabel = 'validación';
-    protected static ?string $modelLabelPlural = 'validaciones';
+    protected static ?string $pluralModelLabel= 'validaciones';
     protected static ?int $navigationSort = 5;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCheckBadge;

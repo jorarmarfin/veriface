@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class RekognitionCollection extends Model
 {
@@ -22,5 +23,14 @@ class RekognitionCollection extends Model
         'is_active' => 'boolean',
         'faces_count' => 'integer',
     ];
+
+    /**
+     * Relación con imágenes indexadas
+     */
+    public function indexedImages(): HasMany
+    {
+        return $this->hasMany(RekognitionIndexedImage::class, 'rekognition_collection_id', 'id');
+    }
 }
+
 

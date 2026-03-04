@@ -59,6 +59,14 @@ class Institution extends Model
     }
 
     /**
+     * Obtener todas las imágenes indexadas de esta institución (a través de su colección)
+     */
+    public function indexedImages(): HasMany
+    {
+        return $this->hasMany(RekognitionIndexedImage::class, 'rekognition_collection_id', 'rekognition_collection_id');
+    }
+
+    /**
      * Scope para obtener solo instituciones activas
      */
     public function scopeActive($query)
