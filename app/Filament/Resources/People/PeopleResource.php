@@ -20,6 +20,9 @@ use Filament\Tables\Table;
 class PeopleResource extends Resource
 {
     protected static ?string $model = People::class;
+    protected static ?string $modelLabel = 'Persona';
+    protected static ?string $pluralModelLabel = 'Personas';
+    protected static ?int $navigationSort = 3;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 

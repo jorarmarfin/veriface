@@ -21,6 +21,11 @@ use Filament\Tables\Table;
 class InstitutionResource extends Resource
 {
     protected static ?string $model = Institution::class;
+    protected static ?string $modelLabel = 'Institución';
+    protected static ?string $pluralModelLabel = 'Instituciones';
+
+
+    protected static ?int $navigationSort = 2;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
