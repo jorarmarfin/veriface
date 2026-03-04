@@ -1,33 +1,35 @@
 <?php
 
-namespace App\Filament\Resources\People;
+namespace App\Filament\Resources\ValidationLogs;
 
-use App\Filament\Resources\People\Pages\ManagePeople;
-use App\Models\People;
+use App\Filament\Resources\ValidationLogs\Pages\ManageValidationLogs;
+use App\Models\ValidationLog;
 use BackedEnum;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
-class PeopleResource extends Resource
+class ValidationLogResource extends Resource
 {
-    protected static ?string $model = People::class;
-    protected static ?string $modelLabel = 'Persona';
-    protected static ?string $modelLabelPlural = 'Personas';
-    protected static ?int $navigationSort = 3;
+    protected static ?string $model = ValidationLog::class;
+    protected static ?string $modelLabel = 'validación';
+    protected static ?string $modelLabelPlural = 'validaciones';
+    protected static ?int $navigationSort = 5;
 
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCheckBadge;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUserGroup;
-
-    protected static ?string $recordTitleAttribute = 'names';
+    protected static ?string $recordTitleAttribute = 'document_number';
 
     public static function form(Schema $schema): Schema
     {
@@ -36,28 +38,33 @@ class PeopleResource extends Resource
                 Select::make('institution_id')
                     ->relationship('institution', 'name')
                     ->required(),
-                TextInput::make('document_number')
+                TextInput::make('document_number'),
+                TextInput::make('similarity')
+                    ->numeric(),
+                Toggle::make('matched')
                     ->required(),
-                TextInput::make('names')
+                DateTimePicker::make('validated_at')
                     ->required(),
-                TextInput::make('photo_path'),
-                TextInput::make('metadata'),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
-            ->recordTitleAttribute('names')
+            ->recordTitleAttribute('document_number')
             ->columns([
                 TextColumn::make('institution.name')
                     ->searchable(),
                 TextColumn::make('document_number')
                     ->searchable(),
-                TextColumn::make('names')
-                    ->searchable(),
-                TextColumn::make('photo_path')
-                    ->searchable(),
+                TextColumn::make('similarity')
+                    ->numeric()
+                    ->sortable(),
+                IconColumn::make('matched')
+                    ->boolean(),
+                TextColumn::make('validated_at')
+                    ->dateTime()
+                    ->sortable(),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -84,7 +91,7 @@ class PeopleResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => ManagePeople::route('/'),
+            'index' => ManageValidationLogs::route('/'),
         ];
     }
 }

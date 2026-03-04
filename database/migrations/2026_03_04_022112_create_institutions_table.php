@@ -19,6 +19,14 @@ return new class extends Migration
             $table->string('name');
             $table->string('slug')->unique()->nullable();
 
+            $table->string('filepath')->nullable();
+
+            //rekognition_collections
+            $table->foreignId('rekognition_collection_id')
+                ->nullable()
+                ->constrained('rekognition_collections')
+                ->nullOnDelete();
+
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
