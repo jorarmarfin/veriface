@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Validación Biométrica</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
@@ -40,16 +41,22 @@
                         <!-- Camera Feed Container -->
                         <div class="flex-1 bg-slate-950 border-2 border-slate-700 rounded-xl overflow-hidden shadow-2xl hover:border-blue-500 transition-colors">
                             <div class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-                                <!-- Video Stream Placeholder -->
+                                <!-- Video Stream -->
                                 <div id="camera-container" class="w-full h-full bg-black flex items-center justify-center relative">
-                                    <svg class="w-24 h-24 text-slate-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                                    </svg>
-                                    <!-- Video element will be inserted here by Vite -->
+                                    <video id="video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+                                    <canvas id="canvas" class="hidden"></canvas>
+
+                                    <!-- Placeholder mientras carga -->
+                                    <div id="video-placeholder" class="flex flex-col items-center justify-center">
+                                        <svg class="w-24 h-24 text-slate-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                        </svg>
+                                        <p class="text-slate-400 mt-4 text-sm">Inicializando cámara...</p>
+                                    </div>
                                 </div>
 
                                 <!-- Status Badge -->
-                                <div class="absolute top-4 right-4 bg-red-500 rounded-full px-3 py-1 flex items-center space-x-2">
+                                <div id="status-badge" class="absolute top-4 right-4 bg-red-500 rounded-full px-3 py-1 flex items-center space-x-2">
                                     <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
                                     <span class="text-white text-sm font-semibold">En vivo</span>
                                 </div>
@@ -58,13 +65,13 @@
 
                         <!-- Control Buttons -->
                         <div class="flex flex-col sm:flex-row gap-3">
-                            <button class="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                            <button id="analyze-btn" class="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                 </svg>
                                 <span>Analizar Rostro</span>
                             </button>
-                            <button class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                            <button id="cancel-btn" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                                 </svg>
@@ -83,15 +90,15 @@
                             <div class="space-y-2 text-xs text-slate-400">
                                 <div class="flex justify-between">
                                     <span>Dispositivo:</span>
-                                    <span class="text-slate-200">Cámara Web Frontal</span>
+                                    <span class="text-slate-200" id="device-name">Detectando...</span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span>Resolución:</span>
-                                    <span class="text-slate-200">1280x720</span>
+                                    <span class="text-slate-200" id="device-resolution">-</span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span>Estado:</span>
-                                    <span class="text-green-400 font-semibold">Conectada</span>
+                                    <span class="text-green-400 font-semibold" id="device-status">Conectando...</span>
                                 </div>
                             </div>
                         </div>
@@ -99,102 +106,125 @@
 
                     <!-- Right Panel - Information Section -->
                     <div class="flex flex-col space-y-4">
-                        <!-- Results Card -->
-                        <div class="bg-slate-800 border-2 border-slate-700 rounded-xl p-6 shadow-2xl hover:border-green-500 transition-colors">
-                            <div class="flex items-center justify-between mb-6">
-                                <h2 class="text-lg font-bold text-white">Información Encontrada</h2>
-                                <div class="w-10 h-10 bg-green-500 bg-opacity-20 rounded-lg flex items-center justify-center">
-                                    <svg class="w-6 h-6 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                                    </svg>
-                                </div>
-                            </div>
-
-                            <!-- Confidence Score -->
-                            <div class="mb-6 pb-6 border-b border-slate-700">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm text-slate-300 font-semibold">Similitud</span>
-                                    <span class="text-2xl font-bold text-green-400">92%</span>
-                                </div>
-                                <div class="w-full bg-slate-700 rounded-full h-2">
-                                    <div class="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full" style="width: 92%"></div>
-                                </div>
-                                <p class="text-xs text-slate-400 mt-2">Coincidencia muy buena con el registro</p>
-                            </div>
-
-                            <!-- Personal Information -->
-                            <div class="space-y-4">
-                                <div>
-                                    <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Nombres</p>
-                                    <p class="text-base text-white font-semibold">Juan Carlos Pérez García</p>
-                                </div>
-
-                                <div>
-                                    <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Documento</p>
-                                    <div class="flex items-center space-x-2">
-                                        <p class="text-base text-white font-mono font-semibold">12345678</p>
-                                        <button class="text-slate-400 hover:text-slate-200 transition-colors">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                                            </svg>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Institución</p>
-                                    <p class="text-base text-white font-semibold">Universidad Central</p>
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Fecha Registro</p>
-                                        <p class="text-sm text-white">2026-02-15</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Última Validación</p>
-                                        <p class="text-sm text-white">2026-03-04</p>
-                                    </div>
-                                </div>
+                        <!-- Initial State - No results -->
+                        <div id="initial-state" class="flex-1 bg-slate-800 border-2 border-slate-700 rounded-xl p-6 shadow-2xl flex flex-col items-center justify-center">
+                            <div class="text-center">
+                                <svg class="w-16 h-16 text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                                <p class="text-slate-300 font-semibold">En espera de análisis</p>
+                                <p class="text-slate-400 text-sm mt-2">Presiona "Analizar Rostro" para comenzar</p>
                             </div>
                         </div>
 
-                        <!-- Action Buttons -->
-                        <div class="grid grid-cols-2 gap-3">
-                            <button class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        <!-- Results Card (hidden initially) -->
+                        <div id="results-state" class="hidden flex-1 flex flex-col space-y-4 overflow-auto">
+                            <div class="bg-slate-800 border-2 border-green-500 rounded-xl p-6 shadow-2xl">
+                                <div class="flex items-center justify-between mb-6">
+                                    <h2 class="text-lg font-bold text-white">Información Encontrada</h2>
+                                    <div class="w-10 h-10 bg-green-500 bg-opacity-20 rounded-lg flex items-center justify-center">
+                                        <svg class="w-6 h-6 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <!-- Confidence Score -->
+                                <div class="mb-6 pb-6 border-b border-slate-700">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-sm text-slate-300 font-semibold">Similitud</span>
+                                        <span class="text-2xl font-bold text-green-400" id="similarity-score">92%</span>
+                                    </div>
+                                    <div class="w-full bg-slate-700 rounded-full h-2">
+                                        <div id="similarity-bar" class="bg-gradient-to-r from-green-500 to-emerald-500 h-2 rounded-full" style="width: 92%"></div>
+                                    </div>
+                                    <p class="text-xs text-slate-400 mt-2">Coincidencia muy buena con el registro</p>
+                                </div>
+
+                                <!-- Personal Information -->
+                                <div class="space-y-4">
+                                    <div>
+                                        <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Nombres</p>
+                                        <p class="text-base text-white font-semibold" id="person-names">-</p>
+                                    </div>
+
+                                    <div>
+                                        <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Documento</p>
+                                        <div class="flex items-center space-x-2">
+                                            <p class="text-base text-white font-mono font-semibold" id="person-document">-</p>
+                                            <button onclick="copyToClipboard()" class="text-slate-400 hover:text-slate-200 transition-colors">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Institución</p>
+                                        <p class="text-base text-white font-semibold" id="person-institution">-</p>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Fecha Registro</p>
+                                            <p class="text-sm text-white" id="person-date">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Photo Section if available -->
+                            <div id="photo-section" class="hidden">
+                                <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-2xl">
+                                    <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-3">Foto Registrada</p>
+                                    <img id="person-photo" src="" alt="Foto de la persona" class="w-full h-48 object-cover rounded-lg">
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="grid grid-cols-2 gap-3">
+                                <button id="confirm-btn" class="bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    <span>Confirmar</span>
+                                </button>
+                                <button id="retry-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                    <span>Reintentar</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- No Match State (hidden) -->
+                        <div id="no-match-state" class="hidden flex-1 bg-slate-800 border-2 border-red-500 rounded-xl p-6 shadow-2xl flex flex-col items-center justify-center">
+                            <div class="w-16 h-16 bg-red-500 bg-opacity-20 rounded-lg flex items-center justify-center mb-4">
+                                <svg class="w-8 h-8 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
                                 </svg>
-                                <span>Confirmar</span>
-                            </button>
-                            <button class="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg flex items-center justify-center space-x-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4v2m0 4v2M9 3h6a2 2 0 012 2v14a2 2 0 01-2 2H9a2 2 0 01-2-2V5a2 2 0 012-2z"></path>
-                                </svg>
-                                <span>Revisar</span>
+                            </div>
+                            <p class="text-white font-bold text-lg text-center mb-2">No se encontró coincidencia</p>
+                            <p class="text-slate-400 text-sm text-center">El rostro detectado no coincide con ningún registro en la base de datos</p>
+                            <button id="no-match-retry-btn" class="mt-6 w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                                Intentar de Nuevo
                             </button>
                         </div>
 
                         <!-- Status Section -->
-                        <div class="bg-slate-800 border border-slate-700 rounded-lg p-4">
+                        <div id="status-section" class="bg-slate-800 border border-slate-700 rounded-lg p-4">
                             <div class="flex items-center space-x-2 mb-3">
                                 <svg class="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"></path>
                                 </svg>
                                 <p class="text-sm text-slate-300 font-semibold">Estado de Validación</p>
                             </div>
-                            <div class="space-y-2">
+                            <div id="status-list" class="space-y-2">
                                 <div class="flex items-center space-x-2">
-                                    <span class="w-2 h-2 bg-green-400 rounded-full"></span>
-                                    <span class="text-sm text-slate-300">Rostro detectado</span>
-                                </div>
-                                <div class="flex items-center space-x-2">
-                                    <span class="w-2 h-2 bg-green-400 rounded-full"></span>
-                                    <span class="text-sm text-slate-300">Registro encontrado</span>
-                                </div>
-                                <div class="flex items-center space-x-2">
-                                    <span class="w-2 h-2 bg-green-400 rounded-full"></span>
-                                    <span class="text-sm text-slate-300">Validación completada</span>
+                                    <span class="w-2 h-2 bg-slate-600 rounded-full"></span>
+                                    <span class="text-sm text-slate-400">Esperando análisis</span>
                                 </div>
                             </div>
                         </div>
@@ -204,8 +234,7 @@
         </main>
     </div>
 
-    <!-- Hidden states for different scenarios -->
-    <!-- Loading State (hidden by default) -->
+    <!-- Loading Overlay -->
     <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-slate-800 rounded-xl p-8 max-w-sm text-center">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
@@ -214,22 +243,249 @@
         </div>
     </div>
 
-    <!-- No Match State (hidden by default) -->
-    <div id="no-match-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-slate-800 rounded-xl p-8 max-w-sm border-2 border-red-500">
-            <div class="flex justify-center mb-4">
-                <div class="w-16 h-16 bg-red-500 bg-opacity-20 rounded-lg flex items-center justify-center">
-                    <svg class="w-8 h-8 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
-                    </svg>
+    <script>
+        let video, canvas, ctx;
+        const UUID = '{{ $uuid }}';
+
+        // Inicializar cámara
+        async function initCamera() {
+            try {
+                // Validar que mediaDevices está disponible
+                if (!navigator.mediaDevices) {
+                    throw new Error('API de MediaDevices no disponible. Se requiere HTTPS o localhost para acceder a la cámara.');
+                }
+
+                if (!navigator.mediaDevices.getUserMedia) {
+                    throw new Error('getUserMedia no está disponible en este navegador');
+                }
+
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+
+                console.log('🎥 Solicitando acceso a cámara...');
+                console.log('🔒 Protocolo actual:', window.location.protocol);
+                console.log('🌐 Host:', window.location.host);
+
+                // Obtener stream de cámara
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                });
+
+                console.log('✅ Stream obtenido exitosamente');
+
+                video.srcObject = stream;
+                video.muted = true; // Silenciar audio si hay
+
+                // Esperar a que el video esté listo
+                const videoReadyPromise = new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        console.log('✅ Video metadata cargado');
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+
+                        // Ocultar placeholder y mostrar video
+                        document.getElementById('video-placeholder').classList.add('hidden');
+                        video.classList.remove('hidden');
+
+                        // Actualizar información
+                        document.getElementById('device-name').textContent = 'Cámara Web Frontal';
+                        document.getElementById('device-status').textContent = 'Conectada';
+                        document.getElementById('device-status').classList.remove('text-red-400');
+                        document.getElementById('device-status').classList.add('text-green-400');
+                        document.getElementById('device-resolution').textContent = `${video.videoWidth}x${video.videoHeight}`;
+
+                        resolve();
+                    };
+                });
+
+                // Reproducir el video
+                const playPromise = video.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(err => {
+                        console.warn('⚠️ Error al reproducir video (puede ser normal):', err.message);
+                    });
+                }
+
+                await videoReadyPromise;
+                console.log('✅ Cámara inicializada correctamente');
+
+            } catch (error) {
+                console.error('❌ Error al acceder a la cámara:', error);
+
+                let errorMessage = error.message;
+                let solution = '';
+
+                // Mensajes de error más específicos
+                if (error.name === 'NotAllowedError') {
+                    errorMessage = 'Permiso denegado';
+                    solution = 'Por favor, permite el acceso a la cámara cuando el navegador lo solicite.';
+                } else if (error.name === 'NotFoundError') {
+                    errorMessage = 'Cámara no encontrada';
+                    solution = 'Asegúrate de que tu dispositivo tiene cámara conectada.';
+                } else if (error.name === 'SecurityError') {
+                    errorMessage = 'Error de seguridad - Se requiere HTTPS';
+                    solution = 'Accede a través de HTTPS o localhost para usar la cámara.';
+                }
+
+                document.getElementById('device-status').textContent = 'Error: ' + errorMessage;
+                document.getElementById('device-status').classList.add('text-red-400');
+
+                document.getElementById('video-placeholder').innerHTML = `
+                    <div class="flex flex-col items-center justify-center text-center px-4">
+                        <svg class="w-24 h-24 text-red-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <p class="text-red-400 font-semibold">Error: ${errorMessage}</p>
+                        <p class="text-slate-400 text-sm mt-2">${solution || error.message}</p>
+                        ${window.location.protocol === 'http:' && window.location.hostname !== 'localhost' ?
+                            `<p class="text-yellow-400 text-xs mt-4 max-w-xs">💡 Intenta acceder a través de <strong>https://</strong> o <strong>localhost</strong></p>`
+                            : ''}
+                    </div>
+                `;
+            }
+        }
+
+        // Capturar foto y enviar para análisis
+        async function captureFace() {
+            if (!video || !video.srcObject) {
+                alert('❌ La cámara no está disponible');
+                return;
+            }
+
+            try {
+                // Dibujar frame actual en canvas
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Convertir a base64
+                const imageData = canvas.toDataURL('image/jpeg', 0.9);
+                console.log('📸 Foto capturada, tamaño:', imageData.length, 'bytes');
+
+                // Mostrar loading
+                document.getElementById('loading-overlay').classList.remove('hidden');
+
+                const response = await fetch(`/validate/${UUID}/analyze`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    },
+                    body: JSON.stringify({ image: imageData })
+                });
+
+                const result = await response.json();
+                document.getElementById('loading-overlay').classList.add('hidden');
+
+                if (result.success) {
+                    console.log('✅ Análisis exitoso');
+                    showResults(result.data);
+                } else if (result.type === 'no_match') {
+                    console.log('⚠️ Sin coincidencia');
+                    showNoMatch();
+                } else {
+                    console.error('❌ Error:', result.message);
+                    alert('Error: ' + result.message);
+                }
+
+            } catch (error) {
+                console.error('❌ Error al procesar:', error);
+                document.getElementById('loading-overlay').classList.add('hidden');
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Mostrar resultados
+        function showResults(data) {
+            document.getElementById('initial-state').classList.add('hidden');
+            document.getElementById('no-match-state').classList.add('hidden');
+            document.getElementById('results-state').classList.remove('hidden');
+
+            document.getElementById('person-names').textContent = data.names;
+            document.getElementById('person-document').textContent = data.document_number;
+            document.getElementById('person-institution').textContent = data.institution;
+            document.getElementById('person-date').textContent = data.created_at;
+            document.getElementById('similarity-score').textContent = data.similarity + '%';
+            document.getElementById('similarity-bar').style.width = data.similarity + '%';
+
+            if (data.photo_url) {
+                document.getElementById('person-photo').src = data.photo_url;
+                document.getElementById('photo-section').classList.remove('hidden');
+            }
+
+            // Actualizar estado
+            document.getElementById('status-list').innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+                    <span class="text-sm text-slate-300">Rostro detectado</span>
                 </div>
-            </div>
-            <p class="text-white font-bold text-lg text-center mb-2">No se encontró coincidencia</p>
-            <p class="text-slate-400 text-sm text-center">El rostro detectado no coincide con ningún registro en la base de datos</p>
-            <button class="mt-6 w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
-                Intentar de Nuevo
-            </button>
-        </div>
-    </div>
+                <div class="flex items-center space-x-2">
+                    <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+                    <span class="text-sm text-slate-300">Registro encontrado</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+                    <span class="text-sm text-slate-300">Validación completada</span>
+                </div>
+            `;
+        }
+
+        // Mostrar no encontrado
+        function showNoMatch() {
+            document.getElementById('initial-state').classList.add('hidden');
+            document.getElementById('results-state').classList.add('hidden');
+            document.getElementById('no-match-state').classList.remove('hidden');
+
+            document.getElementById('status-list').innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <span class="w-2 h-2 bg-red-400 rounded-full"></span>
+                    <span class="text-sm text-slate-300">Rostro detectado</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="w-2 h-2 bg-red-400 rounded-full"></span>
+                    <span class="text-sm text-slate-300">Sin coincidencia</span>
+                </div>
+            `;
+        }
+
+        // Copiar documento al portapapeles
+        function copyToClipboard() {
+            const text = document.getElementById('person-document').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('✅ Documento copiado al portapapeles');
+            }).catch(err => {
+                console.error('Error al copiar:', err);
+                alert('⚠️ No se pudo copiar');
+            });
+        }
+
+        // Event listeners
+        document.getElementById('analyze-btn').addEventListener('click', captureFace);
+        document.getElementById('cancel-btn').addEventListener('click', () => location.reload());
+        document.getElementById('retry-btn').addEventListener('click', () => {
+            document.getElementById('initial-state').classList.remove('hidden');
+            document.getElementById('results-state').classList.add('hidden');
+            document.getElementById('no-match-state').classList.add('hidden');
+        });
+        document.getElementById('no-match-retry-btn').addEventListener('click', () => {
+            document.getElementById('initial-state').classList.remove('hidden');
+            document.getElementById('no-match-state').classList.add('hidden');
+        });
+        document.getElementById('confirm-btn').addEventListener('click', () => {
+            alert('✅ Validación confirmada');
+        });
+
+        // Inicializar al cargar
+        console.log('📱 Sistema de Validación Biométrica inicializando...');
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initCamera);
+        } else {
+            initCamera();
+        }
+    </script>
 </body>
 </html>

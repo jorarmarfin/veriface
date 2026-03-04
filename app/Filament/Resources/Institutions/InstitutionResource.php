@@ -155,7 +155,7 @@ class InstitutionResource extends Resource
             ])
             ->recordActions([
                 Action::make('index-photos')
-                    ->label('📸 Indexar Fotos')
+                    ->label('Indexar Fotos')
                     ->icon('heroicon-m-photo')
                     ->color('warning')
                     ->requiresConfirmation()
@@ -165,6 +165,12 @@ class InstitutionResource extends Resource
                     ->action(function (Institution $record) {
                         self::indexInstitutionPhotos($record);
                     }),
+                Action::make('url_validation')
+                    ->label('Validación')
+                    ->icon('heroicon-m-shield-check')
+                    ->color('success')
+                    ->openUrlInNewTab()
+                    ->url(fn(Institution $record) => route('validate', ['uuid' => $record->uuid])),
                 EditAction::make()
                     ->url(fn(Institution $record) => static::getUrl('edit', ['record' => $record->id])),
             ])
