@@ -225,8 +225,10 @@ class ValidateController extends Controller
 
             $bestMatch = $matches[0];
             $similarity = $bestMatch['similarity'] ?? 0;
-            $externalImageIdRaw = $bestMatch['face']['external_image_id'] ?? null;
-            $faceId = $bestMatch['face']['face_id'] ?? null;
+
+            // El external_image_id está directamente en el match, no en face
+            $externalImageIdRaw = $bestMatch['external_image_id'] ?? null;
+            $faceId = $bestMatch['face_id'] ?? null;
 
             // Remover extensión .jpg del external_image_id para obtener document_number
             $externalImageId = pathinfo($externalImageIdRaw, PATHINFO_FILENAME);
