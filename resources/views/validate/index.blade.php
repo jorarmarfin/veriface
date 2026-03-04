@@ -142,9 +142,9 @@
                                 </div>
 
                                 <!-- Personal Information with Photo -->
-                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <div class="flex flex-col lg:flex-row gap-6">
                                     <!-- Left Column - Personal Data -->
-                                    <div class="lg:col-span-2 space-y-4">
+                                    <div class="flex-1 space-y-4">
                                         <div>
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Nombres</p>
                                             <p class="text-base text-white font-semibold" id="person-names">-</p>
@@ -174,8 +174,8 @@
                                     </div>
 
                                     <!-- Right Column - Photo (Responsive) -->
-                                    <div id="photo-section" class="hidden lg:block">
-                                        <div class="bg-slate-700 border border-slate-600 rounded-lg overflow-hidden flex flex-col items-center justify-center p-2">
+                                    <div id="photo-section" class="hidden lg:flex lg:flex-shrink-0">
+                                        <div class="bg-slate-700 border border-slate-600 rounded-lg overflow-hidden flex flex-col items-center justify-center p-2" style="width: 300px;">
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-3 text-center">Foto Registrada</p>
                                             <img id="person-photo" src="" alt="Foto de la persona" class="w-full h-80 object-cover rounded">
                                         </div>
