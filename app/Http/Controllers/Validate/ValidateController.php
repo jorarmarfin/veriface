@@ -152,34 +152,9 @@ class ValidateController extends Controller
             $photoUrl = null;
 
             if ($photoPath) {
-                // Intentar diferentes rutas posibles
-                $possiblePaths = [
-                    storage_path('app/public/' . $photoPath),
-                    storage_path('app/' . $photoPath),
-                    public_path($photoPath),
-                ];
-
-                $photoExists = false;
-                $existingPath = null;
-
-                foreach ($possiblePaths as $path) {
-                    if (file_exists($path)) {
-                        $photoExists = true;
-                        $existingPath = $path;
-                        break;
-                    }
-                }
-
-                if ($photoExists) {
-                    // Construir URL basada en donde se encontró el archivo
-                    if (strpos($existingPath, storage_path('app/public')) !== false) {
-                        $relativePath = str_replace(storage_path('app/public/'), '', $existingPath);
-                        $photoUrl = asset('storage/' . $relativePath);
-                    } elseif (strpos($existingPath, public_path()) !== false) {
-                        $relativePath = str_replace(public_path() . '/', '', $existingPath);
-                        $photoUrl = asset($relativePath);
-                    }
-                }
+                // Construir URL de la foto
+                // photo_path tiene formato: {filepath}/{document_number}.jpg
+                $photoUrl = asset('storage/' . $photoPath);
             }
 
             return response()->json([

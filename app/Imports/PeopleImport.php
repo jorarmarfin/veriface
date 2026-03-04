@@ -70,8 +70,8 @@ class PeopleImport implements ToCollection, WithHeadingRow
             }
 
             // Generar photo_path automáticamente
-            // Formato: storage/app/public/{filepath}/{document_number}.jpg
-            $photoPath = "storage/app/public/{$this->filepath}/{$documentNumber}.jpg";
+            // Formato: {filepath}/{document_number}.jpg (sin storage/app/public)
+            $photoPath = "{$this->filepath}/{$documentNumber}.jpg";
 
             // Extraer metadata de campos adicionales
             $metadata = [];
