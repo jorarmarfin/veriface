@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Validate;
 use App\Http\Controllers\Controller;
 use App\Models\Institution;
 use App\Models\People;
+use App\Models\RekognitionIndexedImage;
 use App\Models\ValidationLog;
 use App\Services\RekognitionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class ValidateController extends Controller
 {
@@ -179,36 +181,38 @@ class ValidateController extends Controller
                 return response()->json($responsePayload);
             }
 
-            // Procesar mejor coincidencia
-            $bestMatch = $matches[0];
-            $similarity = $bestMatch['similarity'] ?? 0;
+            $resolved = $this->resolveMatchedPerson(
+                matches: $matches,
+                institution: $institution,
+                rekognitionCollectionDbId: $collection->id ?? null
+            );
 
-            // El external_image_id está directamente en el match, no en face
-            $externalImageIdRaw = $bestMatch['external_image_id'] ?? null;
-            $faceId = $bestMatch['face_id'] ?? null;
+            if (!$resolved) {
+                $bestMatch = $matches[0] ?? [];
+                $similarity = $bestMatch['similarity'] ?? 0;
+                $externalImageIdRaw = $bestMatch['external_image_id'] ?? null;
+                $faceId = $bestMatch['face_id'] ?? null;
+                $externalImageId = $externalImageIdRaw ? pathinfo((string) $externalImageIdRaw, PATHINFO_FILENAME) : null;
 
-            // Remover extensión .jpg del external_image_id para obtener document_number
-            $externalImageId = pathinfo($externalImageIdRaw, PATHINFO_FILENAME);
+                Log::warning('Validación sin mapeo de persona pese a coincidencias en Rekognition', [
+                    'institution_id' => $institution->id,
+                    'collection_id' => $collection->collection_id ?? null,
+                    'matches_count' => count($matches),
+                    'first_match' => $bestMatch,
+                ]);
 
-            // Buscar persona en BD
-            $person = People::where('institution_id', $institution->id)
-                ->where('document_number', $externalImageId)
-                ->first();
-
-            if (!$person) {
                 $responsePayload = [
                     'success' => false,
-                    'message' => 'Persona no encontrada en la base de datos',
+                    'message' => 'Coincidencia sin mapeo de persona en base de datos',
                     'type' => 'no_match',
                     'data' => [
                         'document_number' => $externalImageId,
-                        'similarity' => round($similarity, 2),
+                        'similarity' => round((float) $similarity, 2),
                         'face_id' => $faceId,
                         'external_image_id' => $externalImageIdRaw,
                     ],
                 ];
 
-                // Crear registro de validación fallida
                 ValidationLog::create([
                     'institution_id' => $institution->id,
                     'document_number' => $externalImageId,
@@ -220,6 +224,28 @@ class ValidateController extends Controller
 
                 return response()->json($responsePayload);
             }
+
+            // Procesar mejor coincidencia con persona resuelta
+            $bestMatch = $resolved['match'];
+            /** @var People $person */
+            $person = $resolved['person'];
+            $resolvedBy = $resolved['resolved_by'] ?? 'unknown';
+            $similarity = $bestMatch['similarity'] ?? 0;
+
+            // El external_image_id está directamente en el match, no en face
+            $externalImageIdRaw = $bestMatch['external_image_id'] ?? null;
+            $faceId = $bestMatch['face_id'] ?? null;
+
+            Log::info('Validación resuelta con persona mapeada', [
+                'institution_id' => $institution->id,
+                'collection_id' => $collection->collection_id ?? null,
+                'person_id' => $person->id,
+                'document_number' => $person->document_number,
+                'similarity' => $similarity,
+                'face_id' => $faceId,
+                'external_image_id' => $externalImageIdRaw,
+                'resolved_by' => $resolvedBy,
+            ]);
 
             // Preparar respuesta - Buscar foto
             $photoPath = $person->photo_path;
@@ -244,6 +270,7 @@ class ValidateController extends Controller
                     'photo_url' => $photoUrl,
                     'created_at' => $person->created_at->format('Y-m-d'),
                     'metadata' => $person->metadata,
+                    'resolved_by' => $resolvedBy,
                 ],
             ];
 
@@ -291,5 +318,92 @@ class ValidateController extends Controller
             ->increment('validations_used');
 
         return $updated > 0;
+    }
+
+    /**
+     * Resuelve la persona a partir de los matches de Rekognition.
+     * Prioriza el vínculo por face_id (rekognition_indexed_images), y usa external_image_id como fallback.
+     */
+    private function resolveMatchedPerson(array $matches, Institution $institution, ?int $rekognitionCollectionDbId = null): ?array
+    {
+        foreach ($matches as $match) {
+            $faceId = $match['face_id'] ?? null;
+            $externalImageIdRaw = $match['external_image_id'] ?? null;
+            $personByFace = null;
+            $personByExternal = null;
+
+            if ($faceId) {
+                $indexedQuery = RekognitionIndexedImage::query()
+                    ->with('person')
+                    ->where('face_id', $faceId);
+
+                if ($rekognitionCollectionDbId) {
+                    $indexedQuery->where('rekognition_collection_id', $rekognitionCollectionDbId);
+                }
+
+                $indexedImage = $indexedQuery
+                    ->orderByDesc('indexed_at')
+                    ->orderByDesc('id')
+                    ->first();
+
+                $linkedPerson = $indexedImage?->person;
+                if ($linkedPerson && (int) $linkedPerson->institution_id === (int) $institution->id) {
+                    $personByFace = $linkedPerson;
+                }
+            }
+
+            if ($externalImageIdRaw) {
+                $documentNumber = pathinfo((string) $externalImageIdRaw, PATHINFO_FILENAME);
+                if ($documentNumber === '') {
+                    continue;
+                }
+
+                $person = People::where('institution_id', $institution->id)
+                    ->where('document_number', $documentNumber)
+                    ->first();
+
+                if ($person) {
+                    $personByExternal = $person;
+                }
+            }
+
+            if ($personByFace && $personByExternal) {
+                if ((int) $personByFace->id !== (int) $personByExternal->id) {
+                    Log::warning('Conflicto de mapeo en match de Rekognition, se descarta coincidencia', [
+                        'institution_id' => $institution->id,
+                        'face_id' => $faceId,
+                        'external_image_id' => $externalImageIdRaw,
+                        'person_by_face_id' => $personByFace->id,
+                        'person_by_external_id' => $personByExternal->id,
+                        'similarity' => $match['similarity'] ?? null,
+                    ]);
+                    continue;
+                }
+
+                return [
+                    'person' => $personByFace,
+                    'match' => $match,
+                    'resolved_by' => 'face_id+external_image_id',
+                ];
+            }
+
+            if ($personByFace) {
+                return [
+                    'person' => $personByFace,
+                    'match' => $match,
+                    'resolved_by' => 'face_id',
+                ];
+            }
+
+            if ($personByExternal) {
+                return [
+                    'person' => $personByExternal,
+                    'match' => $match,
+                    'resolved_by' => 'external_image_id',
+                ];
+            }
+        }
+
+        return null;
     }
 }
