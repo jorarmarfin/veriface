@@ -20,6 +20,8 @@ class Institution extends Model
         'filepath',
         'rekognition_collection_id',
         'is_active',
+        'validations_contracted',
+        'validations_used',
     ];
 
     /**
@@ -31,6 +33,8 @@ class Institution extends Model
     {
         return [
             'is_active' => 'boolean',
+            'validations_contracted' => 'integer',
+            'validations_used' => 'integer',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
@@ -80,6 +84,39 @@ class Institution extends Model
     public function scopeBySlug($query, $slug)
     {
         return $query->where('slug', $slug)->first();
+    }
+
+    /**
+     * Determina si la institución tiene límite de validaciones.
+     */
+    public function hasValidationLimit(): bool
+    {
+        return $this->validations_contracted !== null;
+    }
+
+    /**
+     * Determina si ya alcanzó el límite de validaciones contratadas.
+     */
+    public function isValidationQuotaExceeded(): bool
+    {
+        if (!$this->hasValidationLimit()) {
+            return false;
+        }
+
+        return $this->validations_used >= $this->validations_contracted;
+    }
+
+    /**
+     * Cantidad restante de validaciones.
+     * null significa ilimitado.
+     */
+    public function getValidationsRemainingAttribute(): ?int
+    {
+        if (!$this->hasValidationLimit()) {
+            return null;
+        }
+
+        return max(0, $this->validations_contracted - $this->validations_used);
     }
 
     /**

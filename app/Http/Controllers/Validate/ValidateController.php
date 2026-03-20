@@ -28,6 +28,15 @@ class ValidateController extends Controller
         if (!$institution->is_active) {
             return view('validate.inactive', [
                 'institution' => $institution,
+                'inactive_reason' => 'inactive',
+            ]);
+        }
+
+        // Validar si superó el límite de validaciones contratadas
+        if ($institution->isValidationQuotaExceeded()) {
+            return view('validate.inactive', [
+                'institution' => $institution,
+                'inactive_reason' => 'quota_exceeded',
             ]);
         }
 
@@ -63,6 +72,27 @@ class ValidateController extends Controller
                 ], 404);
             }
 
+            if (!$institution->is_active) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La institución está desactivada',
+                    'type' => 'inactive',
+                ], 403);
+            }
+
+            if ($institution->isValidationQuotaExceeded()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La institución alcanzó el límite de validaciones contratadas',
+                    'type' => 'quota_exceeded',
+                    'data' => [
+                        'validations_contracted' => $institution->validations_contracted,
+                        'validations_used' => $institution->validations_used,
+                        'validations_remaining' => $institution->validations_remaining,
+                    ],
+                ], 403);
+            }
+
             // Validar colección Rekognition
             if (!$institution->rekognition_collection_id) {
                 return response()->json([
@@ -77,6 +107,22 @@ class ValidateController extends Controller
                     'success' => false,
                     'message' => 'Colección de Rekognition no encontrada',
                 ], 400);
+            }
+
+            // Consume una validación de forma atómica para evitar sobrepasar el límite en concurrencia
+            if (!$this->consumeValidationAttempt($institution)) {
+                $institution->refresh();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La institución alcanzó el límite de validaciones contratadas',
+                    'type' => 'quota_exceeded',
+                    'data' => [
+                        'validations_contracted' => $institution->validations_contracted,
+                        'validations_used' => $institution->validations_used,
+                        'validations_remaining' => $institution->validations_remaining,
+                    ],
+                ], 403);
             }
 
             // Procesar imagen base64
@@ -225,5 +271,24 @@ class ValidateController extends Controller
                 'debug' => config('app.debug') ? $e->getTraceAsString() : null,
             ], 500);
         }
+    }
+
+    /**
+     * Descuenta una validación para la institución de forma atómica.
+     * Si tiene límite, solo incrementa cuando validations_used < validations_contracted.
+     */
+    private function consumeValidationAttempt(Institution $institution): bool
+    {
+        if ($institution->validations_contracted === null) {
+            Institution::whereKey($institution->id)->increment('validations_used');
+            return true;
+        }
+
+        $updated = Institution::query()
+            ->whereKey($institution->id)
+            ->whereColumn('validations_used', '<', 'validations_contracted')
+            ->increment('validations_used');
+
+        return $updated > 0;
     }
 }
