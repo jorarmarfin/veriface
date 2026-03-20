@@ -172,6 +172,11 @@
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Fecha Registro</p>
                                             <p class="text-sm text-white" id="person-date">-</p>
                                         </div>
+
+                                        <div id="person-metadata-wrapper" class="hidden">
+                                            <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Metadata</p>
+                                            <div id="person-metadata" class="space-y-2"></div>
+                                        </div>
                                     </div>
 
                                     <!-- Right Column - Photo (Responsive) -->
@@ -812,6 +817,7 @@
             document.getElementById('person-date').textContent = data.created_at;
             document.getElementById('similarity-score').textContent = data.similarity + '%';
             document.getElementById('similarity-bar').style.width = data.similarity + '%';
+            renderMetadata(data.metadata);
 
             // Mostrar foto si existe
             if (data.photo_url) {
@@ -848,6 +854,7 @@
             document.getElementById('initial-state').classList.add('hidden');
             document.getElementById('results-state').classList.add('hidden');
             document.getElementById('no-match-state').classList.remove('hidden');
+            renderMetadata(null);
 
             document.getElementById('status-list').innerHTML = `
                 <div class="flex items-center space-x-2">
@@ -870,6 +877,107 @@
                 console.error('Error al copiar:', err);
                 alert('⚠️ No se pudo copiar');
             });
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function formatMetadataLabel(key) {
+            return String(key)
+                .replace(/[_-]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .replace(/\b\w/g, (char) => char.toUpperCase());
+        }
+
+        function normalizeMetadata(metadata) {
+            if (metadata === null || metadata === undefined || metadata === '') {
+                return null;
+            }
+
+            if (typeof metadata === 'string') {
+                try {
+                    return JSON.parse(metadata);
+                } catch (error) {
+                    return { valor: metadata };
+                }
+            }
+
+            return metadata;
+        }
+
+        function renderMetadataValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return '<span class="text-slate-500">-</span>';
+            }
+
+            if (Array.isArray(value)) {
+                if (!value.length) {
+                    return '<span class="text-slate-500">Sin datos</span>';
+                }
+
+                const primitives = value.every((item) => item === null || typeof item !== 'object');
+                if (primitives) {
+                    return `<ul class="list-disc list-inside space-y-1 text-slate-200">${value
+                        .map((item) => `<li>${escapeHtml(item ?? '-')}</li>`)
+                        .join('')}</ul>`;
+                }
+
+                return `<div class="space-y-2">${value
+                    .map((item, index) => `
+                        <div class="rounded-md border border-slate-600 bg-slate-900/40 p-2">
+                            <p class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Item ${index + 1}</p>
+                            <div class="text-sm text-slate-200">${renderMetadataValue(item)}</div>
+                        </div>
+                    `)
+                    .join('')}</div>`;
+            }
+
+            if (typeof value === 'object') {
+                const entries = Object.entries(value);
+                if (!entries.length) {
+                    return '<span class="text-slate-500">Sin datos</span>';
+                }
+
+                return `<div class="space-y-2">${entries
+                    .map(([key, nestedValue]) => `
+                        <div class="rounded-md border border-slate-600 bg-slate-900/40 p-2">
+                            <p class="text-[11px] uppercase tracking-wide text-cyan-300 mb-1">${escapeHtml(formatMetadataLabel(key))}</p>
+                            <div class="text-sm text-slate-200">${renderMetadataValue(nestedValue)}</div>
+                        </div>
+                    `)
+                    .join('')}</div>`;
+            }
+
+            return `<span class="text-slate-100">${escapeHtml(value)}</span>`;
+        }
+
+        function renderMetadata(metadata) {
+            const wrapper = document.getElementById('person-metadata-wrapper');
+            const container = document.getElementById('person-metadata');
+
+            if (!wrapper || !container) {
+                return;
+            }
+
+            const normalized = normalizeMetadata(metadata);
+            const isEmptyObject = normalized && typeof normalized === 'object' && !Array.isArray(normalized) && Object.keys(normalized).length === 0;
+            const isEmptyArray = Array.isArray(normalized) && normalized.length === 0;
+
+            if (normalized === null || isEmptyObject || isEmptyArray) {
+                wrapper.classList.add('hidden');
+                container.innerHTML = '';
+                return;
+            }
+
+            wrapper.classList.remove('hidden');
+            container.innerHTML = renderMetadataValue(normalized);
         }
 
         // Event listeners

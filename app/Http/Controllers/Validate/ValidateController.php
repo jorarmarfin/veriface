@@ -94,21 +94,43 @@ class ValidateController extends Controller
             );
 
             if (!$searchResult['success']) {
-                return response()->json([
+                $responsePayload = [
                     'success' => false,
                     'message' => $searchResult['message'] ?? 'Error en el análisis de rostro',
-                ], 400);
+                ];
+
+                ValidationLog::create([
+                    'institution_id' => $institution->id,
+                    'document_number' => null,
+                    'similarity' => null,
+                    'matched' => false,
+                    'validated_at' => now(),
+                    'response' => $responsePayload,
+                ]);
+
+                return response()->json($responsePayload, 400);
             }
 
             // Verificar si hay coincidencias
             $matches = $searchResult['matches'] ?? [];
 
             if (empty($matches)) {
-                return response()->json([
+                $responsePayload = [
                     'success' => false,
                     'message' => 'No se encontró coincidencia con ningún registro',
                     'type' => 'no_match',
+                ];
+
+                ValidationLog::create([
+                    'institution_id' => $institution->id,
+                    'document_number' => null,
+                    'similarity' => null,
+                    'matched' => false,
+                    'validated_at' => now(),
+                    'response' => $responsePayload,
                 ]);
+
+                return response()->json($responsePayload);
             }
 
             // Procesar mejor coincidencia
@@ -128,6 +150,18 @@ class ValidateController extends Controller
                 ->first();
 
             if (!$person) {
+                $responsePayload = [
+                    'success' => false,
+                    'message' => 'Persona no encontrada en la base de datos',
+                    'type' => 'no_match',
+                    'data' => [
+                        'document_number' => $externalImageId,
+                        'similarity' => round($similarity, 2),
+                        'face_id' => $faceId,
+                        'external_image_id' => $externalImageIdRaw,
+                    ],
+                ];
+
                 // Crear registro de validación fallida
                 ValidationLog::create([
                     'institution_id' => $institution->id,
@@ -135,23 +169,11 @@ class ValidateController extends Controller
                     'similarity' => $similarity,
                     'matched' => false,
                     'validated_at' => now(),
+                    'response' => $responsePayload,
                 ]);
 
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Persona no encontrada en la base de datos',
-                    'type' => 'no_match',
-                ]);
+                return response()->json($responsePayload);
             }
-
-            // Registrar validación exitosa
-            ValidationLog::create([
-                'institution_id' => $institution->id,
-                'document_number' => $person->document_number,
-                'similarity' => $similarity,
-                'matched' => true,
-                'validated_at' => now(),
-            ]);
 
             // Preparar respuesta - Buscar foto
             $photoPath = $person->photo_path;
@@ -163,7 +185,7 @@ class ValidateController extends Controller
                 $photoUrl = asset('storage/' . $photoPath);
             }
 
-            return response()->json([
+            $responsePayload = [
                 'success' => true,
                 'message' => 'Persona validada correctamente',
                 'type' => 'match',
@@ -176,7 +198,19 @@ class ValidateController extends Controller
                     'created_at' => $person->created_at->format('Y-m-d'),
                     'metadata' => $person->metadata,
                 ],
+            ];
+
+            // Registrar validación exitosa
+            ValidationLog::create([
+                'institution_id' => $institution->id,
+                'document_number' => $person->document_number,
+                'similarity' => $similarity,
+                'matched' => true,
+                'validated_at' => now(),
+                'response' => $responsePayload,
             ]);
+
+            return response()->json($responsePayload);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
