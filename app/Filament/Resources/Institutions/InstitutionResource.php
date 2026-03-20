@@ -40,16 +40,17 @@ class InstitutionResource extends Resource
                 TextInput::make('name')
                     ->label('Nombre de la Institución')
                     ->required()
+                    ->columnSpanFull(),
+
+                TextInput::make('event')
+                    ->label('Event')
+                    ->required()
                     ->live(onBlur: true)
                     ->afterStateUpdated(function ($state, callable $set) {
                         $slug = \Str::slug($state);
                         $set('slug', $slug);
                         $set('filepath', $slug);
                     })
-                    ->columnSpanFull(),
-
-                TextInput::make('event')
-                    ->label('Event')
                     ->placeholder('Ej: Ceremonia Premiacion 2026')
                     ->columnSpanFull(),
 
