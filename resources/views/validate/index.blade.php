@@ -45,6 +45,7 @@
                                 <div id="camera-container" class="w-full h-full bg-black flex items-center justify-center relative">
                                     <video id="video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
                                     <canvas id="canvas" class="hidden"></canvas>
+                                    <canvas id="overlay-canvas" class="absolute inset-0 w-full h-full pointer-events-none hidden z-10"></canvas>
 
                                     <!-- Placeholder mientras carga -->
                                     <div id="video-placeholder" class="flex flex-col items-center justify-center">
@@ -168,8 +169,18 @@
                                         </div>
 
                                         <div>
+                                            <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Event</p>
+                                            <p class="text-sm text-white" id="person-event">-</p>
+                                        </div>
+
+                                        <div>
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Fecha Registro</p>
                                             <p class="text-sm text-white" id="person-date">-</p>
+                                        </div>
+
+                                        <div id="person-metadata-wrapper" class="hidden">
+                                            <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Metadata</p>
+                                            <div id="person-metadata" class="space-y-2"></div>
                                         </div>
                                     </div>
 
@@ -244,9 +255,437 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <script>
-        let video, canvas, ctx;
+        let video, canvas, ctx, overlayCanvas, overlayCtx;
+        let faceDetector = null;
+        let mediaPipeFaceMesh = null;
+        let overlayIntervalId = null;
+        let overlayRafId = null;
+        let overlayResizeBound = false;
+        let overlayEnabled = false;
+        let overlayBusy = false;
+        let overlayEngine = 'none';
         const UUID = '{{ $uuid }}';
+        const OVERLAY_DETECTION_INTERVAL_MS = 120;
+
+        function showMessage({ title, text = '', icon = 'info', confirmButtonText = 'Aceptar' }) {
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                return window.Swal.fire({
+                    title,
+                    text,
+                    icon,
+                    confirmButtonText,
+                    background: '#0f172a',
+                    color: '#e2e8f0',
+                    confirmButtonColor: '#2563eb',
+                });
+            }
+
+            const fallbackText = text ? `${title}\n${text}` : title;
+            alert(fallbackText);
+            return Promise.resolve();
+        }
+
+        function clearOverlay() {
+            if (!overlayCanvas || !overlayCtx) {
+                return;
+            }
+
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+
+        function stopFaceOverlay() {
+            if (overlayIntervalId) {
+                clearInterval(overlayIntervalId);
+                overlayIntervalId = null;
+            }
+
+            if (overlayRafId) {
+                cancelAnimationFrame(overlayRafId);
+                overlayRafId = null;
+            }
+
+            overlayBusy = false;
+            overlayEnabled = false;
+            overlayEngine = 'none';
+            clearOverlay();
+        }
+
+        function resizeOverlayCanvas() {
+            if (!overlayCanvas || !video) {
+                return;
+            }
+
+            const rect = overlayCanvas.getBoundingClientRect();
+            const width = Math.max(1, Math.round(rect.width));
+            const height = Math.max(1, Math.round(rect.height));
+
+            if (overlayCanvas.width !== width || overlayCanvas.height !== height) {
+                overlayCanvas.width = width;
+                overlayCanvas.height = height;
+            }
+        }
+
+        function mapVideoPointToOverlay(x, y) {
+            const overlayWidth = overlayCanvas.width;
+            const overlayHeight = overlayCanvas.height;
+            const videoWidth = video.videoWidth || 1;
+            const videoHeight = video.videoHeight || 1;
+
+            const scale = Math.max(overlayWidth / videoWidth, overlayHeight / videoHeight);
+            const renderedWidth = videoWidth * scale;
+            const renderedHeight = videoHeight * scale;
+            const offsetX = (overlayWidth - renderedWidth) / 2;
+            const offsetY = (overlayHeight - renderedHeight) / 2;
+
+            return {
+                x: (x * scale) + offsetX,
+                y: (y * scale) + offsetY,
+            };
+        }
+
+        function drawFaceVector(face) {
+            const box = face.boundingBox;
+            const topLeft = mapVideoPointToOverlay(box.x, box.y);
+            const topRight = mapVideoPointToOverlay(box.x + box.width, box.y);
+            const bottomRight = mapVideoPointToOverlay(box.x + box.width, box.y + box.height);
+            const bottomLeft = mapVideoPointToOverlay(box.x, box.y + box.height);
+
+            const center = {
+                x: (topLeft.x + topRight.x + bottomRight.x + bottomLeft.x) / 4,
+                y: (topLeft.y + topRight.y + bottomRight.y + bottomLeft.y) / 4,
+            };
+
+            overlayCtx.lineWidth = 2;
+            overlayCtx.strokeStyle = '#00d4ff';
+            overlayCtx.fillStyle = 'rgba(0, 212, 255, 0.12)';
+
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(topLeft.x, topLeft.y);
+            overlayCtx.lineTo(topRight.x, topRight.y);
+            overlayCtx.lineTo(bottomRight.x, bottomRight.y);
+            overlayCtx.lineTo(bottomLeft.x, bottomLeft.y);
+            overlayCtx.closePath();
+            overlayCtx.fill();
+            overlayCtx.stroke();
+
+            overlayCtx.strokeStyle = 'rgba(0, 212, 255, 0.55)';
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(topLeft.x, topLeft.y);
+            overlayCtx.lineTo(center.x, center.y);
+            overlayCtx.lineTo(topRight.x, topRight.y);
+            overlayCtx.moveTo(bottomLeft.x, bottomLeft.y);
+            overlayCtx.lineTo(center.x, center.y);
+            overlayCtx.lineTo(bottomRight.x, bottomRight.y);
+            overlayCtx.stroke();
+
+            const landmarks = Array.isArray(face.landmarks) ? face.landmarks : [];
+            if (!landmarks.length) {
+                return;
+            }
+
+            const grouped = { eye: [], nose: [], mouth: [] };
+
+            for (const landmark of landmarks) {
+                const type = landmark?.type;
+                const location = landmark?.location;
+                if (!location || !grouped[type]) {
+                    continue;
+                }
+                grouped[type].push(mapVideoPointToOverlay(location.x, location.y));
+            }
+
+            const eyes = grouped.eye;
+            const noses = grouped.nose;
+            const mouths = grouped.mouth;
+
+            const drawPoint = (point, radius = 3, color = '#ffffff') => {
+                overlayCtx.beginPath();
+                overlayCtx.fillStyle = color;
+                overlayCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+                overlayCtx.fill();
+            };
+
+            const drawLink = (a, b, color = 'rgba(255, 255, 255, 0.75)') => {
+                overlayCtx.beginPath();
+                overlayCtx.strokeStyle = color;
+                overlayCtx.lineWidth = 1.5;
+                overlayCtx.moveTo(a.x, a.y);
+                overlayCtx.lineTo(b.x, b.y);
+                overlayCtx.stroke();
+            };
+
+            eyes.forEach(point => drawPoint(point, 3.2));
+            noses.forEach(point => drawPoint(point, 3.2));
+            mouths.forEach(point => drawPoint(point, 3.2));
+
+            if (eyes.length >= 2) {
+                drawLink(eyes[0], eyes[1], 'rgba(0, 212, 255, 0.9)');
+            }
+
+            if (eyes.length && noses.length) {
+                drawLink(eyes[0], noses[0]);
+                if (eyes[1]) {
+                    drawLink(eyes[1], noses[0]);
+                }
+            }
+
+            if (noses.length && mouths.length) {
+                drawLink(noses[0], mouths[0], 'rgba(0, 212, 255, 0.8)');
+            }
+        }
+
+        function loadExternalScript(src) {
+            return new Promise((resolve, reject) => {
+                const existing = document.querySelector(`script[data-src="${src}"]`);
+                if (existing) {
+                    if (existing.getAttribute('data-loaded') === 'true') {
+                        resolve();
+                        return;
+                    }
+
+                    existing.addEventListener('load', () => resolve(), { once: true });
+                    existing.addEventListener('error', () => reject(new Error(`No se pudo cargar ${src}`)), { once: true });
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = src;
+                script.async = true;
+                script.defer = true;
+                script.setAttribute('data-src', src);
+                script.addEventListener('load', () => {
+                    script.setAttribute('data-loaded', 'true');
+                    resolve();
+                }, { once: true });
+                script.addEventListener('error', () => reject(new Error(`No se pudo cargar ${src}`)), { once: true });
+                document.head.appendChild(script);
+            });
+        }
+
+        function drawMediaPipeFace(landmarks) {
+            if (!overlayCtx || typeof drawConnectors !== 'function') {
+                return;
+            }
+
+            if (typeof FACEMESH_TESSELATION !== 'undefined') {
+                drawConnectors(overlayCtx, landmarks, FACEMESH_TESSELATION, {
+                    color: 'rgba(0, 212, 255, 0.32)',
+                    lineWidth: 1,
+                });
+            }
+
+            const contourSets = [
+                typeof FACEMESH_FACE_OVAL !== 'undefined' ? FACEMESH_FACE_OVAL : null,
+                typeof FACEMESH_LEFT_EYE !== 'undefined' ? FACEMESH_LEFT_EYE : null,
+                typeof FACEMESH_RIGHT_EYE !== 'undefined' ? FACEMESH_RIGHT_EYE : null,
+                typeof FACEMESH_LEFT_EYEBROW !== 'undefined' ? FACEMESH_LEFT_EYEBROW : null,
+                typeof FACEMESH_RIGHT_EYEBROW !== 'undefined' ? FACEMESH_RIGHT_EYEBROW : null,
+                typeof FACEMESH_LIPS !== 'undefined' ? FACEMESH_LIPS : null,
+                typeof FACEMESH_NOSE !== 'undefined' ? FACEMESH_NOSE : null,
+            ].filter(Boolean);
+
+            for (const contour of contourSets) {
+                drawConnectors(overlayCtx, landmarks, contour, {
+                    color: '#00d4ff',
+                    lineWidth: 1.4,
+                });
+            }
+        }
+
+        function onMediaPipeResults(results) {
+            if (!overlayEnabled || overlayEngine !== 'mediapipe') {
+                return;
+            }
+
+            resizeOverlayCanvas();
+            clearOverlay();
+
+            const faces = results?.multiFaceLandmarks || [];
+            for (const landmarks of faces) {
+                drawMediaPipeFace(landmarks);
+            }
+        }
+
+        function startMediaPipeLoop() {
+            if (overlayRafId) {
+                cancelAnimationFrame(overlayRafId);
+                overlayRafId = null;
+            }
+
+            const tick = async () => {
+                if (!overlayEnabled || overlayEngine !== 'mediapipe') {
+                    return;
+                }
+
+                overlayRafId = requestAnimationFrame(tick);
+
+                if (overlayBusy || !mediaPipeFaceMesh || !video) {
+                    return;
+                }
+
+                if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                    return;
+                }
+
+                overlayBusy = true;
+                try {
+                    await mediaPipeFaceMesh.send({ image: video });
+                } catch (error) {
+                    console.warn('MediaPipe no pudo procesar el frame:', error);
+                    stopFaceOverlay();
+                    document.getElementById('device-status').textContent = 'Conectada (sin vectores)';
+                } finally {
+                    overlayBusy = false;
+                }
+            };
+
+            overlayRafId = requestAnimationFrame(tick);
+        }
+
+        async function setupMediaPipeOverlay() {
+            await loadExternalScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js');
+            await loadExternalScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
+
+            if (typeof FaceMesh === 'undefined') {
+                throw new Error('FaceMesh no está disponible');
+            }
+
+            mediaPipeFaceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+            });
+
+            mediaPipeFaceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5,
+            });
+
+            mediaPipeFaceMesh.onResults(onMediaPipeResults);
+
+            overlayEngine = 'mediapipe';
+            overlayEnabled = true;
+            overlayCanvas.classList.remove('hidden');
+            resizeOverlayCanvas();
+            startMediaPipeLoop();
+        }
+
+        async function detectAndDrawFaces() {
+            if (!overlayEnabled || !faceDetector || !video || !overlayCanvas || overlayBusy) {
+                return;
+            }
+
+            if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                return;
+            }
+
+            overlayBusy = true;
+            try {
+                resizeOverlayCanvas();
+                clearOverlay();
+
+                const faces = await faceDetector.detect(video);
+                for (const face of faces) {
+                    drawFaceVector(face);
+                }
+            } catch (error) {
+                console.warn('No se pudo dibujar el overlay de rostro:', error);
+                overlayEnabled = false;
+                stopFaceOverlay();
+            } finally {
+                overlayBusy = false;
+            }
+        }
+
+        async function setupFaceOverlay() {
+            overlayCanvas = document.getElementById('overlay-canvas');
+            if (!overlayCanvas) {
+                return;
+            }
+
+            overlayCtx = overlayCanvas.getContext('2d');
+            stopFaceOverlay();
+
+            if (!overlayResizeBound) {
+                window.addEventListener('resize', resizeOverlayCanvas);
+                overlayResizeBound = true;
+            }
+
+            if ('FaceDetector' in window) {
+                try {
+                    faceDetector = new FaceDetector({
+                        fastMode: true,
+                        maxDetectedFaces: 1,
+                    });
+                    overlayEngine = 'face-detector';
+                    overlayEnabled = true;
+                    overlayCanvas.classList.remove('hidden');
+                    resizeOverlayCanvas();
+
+                    if (overlayIntervalId) {
+                        clearInterval(overlayIntervalId);
+                    }
+
+                    overlayIntervalId = setInterval(detectAndDrawFaces, OVERLAY_DETECTION_INTERVAL_MS);
+                    document.getElementById('device-status').textContent = 'Conectada (vectores activos)';
+                    return;
+                } catch (error) {
+                    console.warn('FaceDetector no pudo inicializarse:', error);
+                }
+            }
+
+            try {
+                await setupMediaPipeOverlay();
+                document.getElementById('device-status').textContent = 'Conectada (vectores activos)';
+            } catch (error) {
+                console.warn('No se pudo activar overlay con MediaPipe:', error);
+                stopFaceOverlay();
+                document.getElementById('device-status').textContent = 'Conectada (sin vectores: navegador no compatible)';
+            }
+        }
+
+        async function getCameraStreamWithFallback() {
+            const constraintsList = [
+                {
+                    video: {
+                        facingMode: { ideal: 'user' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                    },
+                    audio: false,
+                },
+                {
+                    video: {
+                        facingMode: { ideal: 'user' },
+                    },
+                    audio: false,
+                },
+                {
+                    video: true,
+                    audio: false,
+                },
+            ];
+
+            let lastError = null;
+
+            for (const constraints of constraintsList) {
+                try {
+                    return await navigator.mediaDevices.getUserMedia(constraints);
+                } catch (error) {
+                    lastError = error;
+                    console.warn('Intento de cámara fallido, probando fallback...', {
+                        constraints,
+                        name: error?.name,
+                        message: error?.message,
+                    });
+                }
+            }
+
+            throw lastError || new Error('No se pudo iniciar la cámara');
+        }
 
         // Inicializar cámara
         async function initCamera() {
@@ -264,15 +703,15 @@
                 canvas = document.getElementById('canvas');
                 ctx = canvas.getContext('2d');
 
+                // Si ya hay un stream previo, cerrarlo antes de abrir uno nuevo
+                if (video.srcObject) {
+                    const previousStream = video.srcObject;
+                    previousStream.getTracks().forEach(track => track.stop());
+                    video.srcObject = null;
+                }
+
                 // Obtener stream de cámara
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'user',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
-                    audio: false
-                });
+                const stream = await getCameraStreamWithFallback();
 
                 video.srcObject = stream;
                 video.muted = true; // Silenciar audio si hay
@@ -307,6 +746,7 @@
                 }
 
                 await videoReadyPromise;
+                await setupFaceOverlay();
 
             } catch (error) {
                 console.error('❌ Error al acceder a la cámara:', error);
@@ -321,6 +761,9 @@
                 } else if (error.name === 'NotFoundError') {
                     errorMessage = 'Cámara no encontrada';
                     solution = 'Asegúrate de que tu dispositivo tiene cámara conectada.';
+                } else if (error.name === 'NotReadableError') {
+                    errorMessage = 'La cámara está en uso o no pudo iniciarse';
+                    solution = 'Cierra otras pestañas/apps que usen cámara y recarga la página.';
                 } else if (error.name === 'SecurityError') {
                     errorMessage = 'Error de seguridad - Se requiere HTTPS';
                     solution = 'Accede a través de HTTPS o localhost para usar la cámara.';
@@ -347,7 +790,11 @@
         // Capturar foto y enviar para análisis
         async function captureFace() {
             if (!video || !video.srcObject) {
-                alert('❌ La cámara no está disponible');
+                await showMessage({
+                    title: 'Cámara no disponible',
+                    text: 'No se pudo acceder a la cámara en este momento.',
+                    icon: 'error',
+                });
                 return;
             }
 
@@ -377,13 +824,28 @@
                     showResults(result.data);
                 } else if (result.type === 'no_match') {
                     showNoMatch();
+                } else if (result.type === 'quota_exceeded' || result.type === 'inactive') {
+                    await showMessage({
+                        title: 'Validación no disponible',
+                        text: result.message || 'La institución no puede validar en este momento.',
+                        icon: 'warning',
+                    });
+                    window.location.reload();
                 } else {
-                    alert('Error: ' + result.message);
+                    await showMessage({
+                        title: 'Error',
+                        text: result.message || 'Ocurrió un error al validar.',
+                        icon: 'error',
+                    });
                 }
 
             } catch (error) {
                 document.getElementById('loading-overlay').classList.add('hidden');
-                alert('Error: ' + error.message);
+                await showMessage({
+                    title: 'Error',
+                    text: error.message || 'Error inesperado en la validación.',
+                    icon: 'error',
+                });
             }
         }
 
@@ -396,9 +858,11 @@
             document.getElementById('person-names').textContent = data.names;
             document.getElementById('person-document').textContent = data.document_number;
             document.getElementById('person-institution').textContent = data.institution;
+            document.getElementById('person-event').textContent = data.event || '-';
             document.getElementById('person-date').textContent = data.created_at;
             document.getElementById('similarity-score').textContent = data.similarity + '%';
             document.getElementById('similarity-bar').style.width = data.similarity + '%';
+            renderMetadata(data.metadata);
 
             // Mostrar foto si existe
             if (data.photo_url) {
@@ -435,6 +899,8 @@
             document.getElementById('initial-state').classList.add('hidden');
             document.getElementById('results-state').classList.add('hidden');
             document.getElementById('no-match-state').classList.remove('hidden');
+            document.getElementById('person-event').textContent = '-';
+            renderMetadata(null);
 
             document.getElementById('status-list').innerHTML = `
                 <div class="flex items-center space-x-2">
@@ -452,11 +918,120 @@
         function copyToClipboard() {
             const text = document.getElementById('person-document').textContent;
             navigator.clipboard.writeText(text).then(() => {
-                alert('✅ Documento copiado al portapapeles');
+                showMessage({
+                    title: 'Documento copiado',
+                    text: 'El número de documento se copió al portapapeles.',
+                    icon: 'success',
+                });
             }).catch(err => {
                 console.error('Error al copiar:', err);
-                alert('⚠️ No se pudo copiar');
+                showMessage({
+                    title: 'No se pudo copiar',
+                    text: 'El navegador bloqueó el acceso al portapapeles.',
+                    icon: 'warning',
+                });
             });
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function formatMetadataLabel(key) {
+            return String(key)
+                .replace(/[_-]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .replace(/\b\w/g, (char) => char.toUpperCase());
+        }
+
+        function normalizeMetadata(metadata) {
+            if (metadata === null || metadata === undefined || metadata === '') {
+                return null;
+            }
+
+            if (typeof metadata === 'string') {
+                try {
+                    return JSON.parse(metadata);
+                } catch (error) {
+                    return { valor: metadata };
+                }
+            }
+
+            return metadata;
+        }
+
+        function renderMetadataValue(value) {
+            if (value === null || value === undefined || value === '') {
+                return '<span class="text-slate-500">-</span>';
+            }
+
+            if (Array.isArray(value)) {
+                if (!value.length) {
+                    return '<span class="text-slate-500">Sin datos</span>';
+                }
+
+                const primitives = value.every((item) => item === null || typeof item !== 'object');
+                if (primitives) {
+                    return `<ul class="list-disc list-inside space-y-1 text-slate-200">${value
+                        .map((item) => `<li>${escapeHtml(item ?? '-')}</li>`)
+                        .join('')}</ul>`;
+                }
+
+                return `<div class="space-y-2">${value
+                    .map((item, index) => `
+                        <div class="rounded-md border border-slate-600 bg-slate-900/40 p-2">
+                            <p class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Item ${index + 1}</p>
+                            <div class="text-sm text-slate-200">${renderMetadataValue(item)}</div>
+                        </div>
+                    `)
+                    .join('')}</div>`;
+            }
+
+            if (typeof value === 'object') {
+                const entries = Object.entries(value);
+                if (!entries.length) {
+                    return '<span class="text-slate-500">Sin datos</span>';
+                }
+
+                return `<div class="space-y-2">${entries
+                    .map(([key, nestedValue]) => `
+                        <div class="rounded-md border border-slate-600 bg-slate-900/40 p-2">
+                            <p class="text-[11px] uppercase tracking-wide text-cyan-300 mb-1">${escapeHtml(formatMetadataLabel(key))}</p>
+                            <div class="text-sm text-slate-200">${renderMetadataValue(nestedValue)}</div>
+                        </div>
+                    `)
+                    .join('')}</div>`;
+            }
+
+            return `<span class="text-slate-100">${escapeHtml(value)}</span>`;
+        }
+
+        function renderMetadata(metadata) {
+            const wrapper = document.getElementById('person-metadata-wrapper');
+            const container = document.getElementById('person-metadata');
+
+            if (!wrapper || !container) {
+                return;
+            }
+
+            const normalized = normalizeMetadata(metadata);
+            const isEmptyObject = normalized && typeof normalized === 'object' && !Array.isArray(normalized) && Object.keys(normalized).length === 0;
+            const isEmptyArray = Array.isArray(normalized) && normalized.length === 0;
+
+            if (normalized === null || isEmptyObject || isEmptyArray) {
+                wrapper.classList.add('hidden');
+                container.innerHTML = '';
+                return;
+            }
+
+            wrapper.classList.remove('hidden');
+            container.innerHTML = renderMetadataValue(normalized);
         }
 
         // Event listeners
@@ -472,7 +1047,14 @@
             document.getElementById('no-match-state').classList.add('hidden');
         });
         document.getElementById('confirm-btn').addEventListener('click', () => {
-            alert('✅ Validación confirmada');
+            showMessage({
+                title: 'Validación confirmada',
+                icon: 'success',
+            });
+        });
+
+        window.addEventListener('beforeunload', () => {
+            stopFaceOverlay();
         });
 
         // Inicializar al cargar

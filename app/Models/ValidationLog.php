@@ -18,6 +18,7 @@ class ValidationLog extends Model
         'similarity',
         'matched',
         'validated_at',
+        'response',
     ];
 
     /**
@@ -31,6 +32,7 @@ class ValidationLog extends Model
             'similarity' => 'decimal:2',
             'matched' => 'boolean',
             'validated_at' => 'datetime',
+            'response' => 'array',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];

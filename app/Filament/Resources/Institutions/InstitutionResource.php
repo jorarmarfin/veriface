@@ -18,8 +18,8 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
 
 class InstitutionResource extends Resource
@@ -46,6 +46,11 @@ class InstitutionResource extends Resource
                         $set('slug', $slug);
                         $set('filepath', $slug);
                     })
+                    ->columnSpanFull(),
+
+                TextInput::make('event')
+                    ->label('Event')
+                    ->placeholder('Ej: Ceremonia Premiacion 2026')
                     ->columnSpanFull(),
 
                 TextInput::make('slug')
@@ -75,6 +80,23 @@ class InstitutionResource extends Resource
                     ->label('Activa')
                     ->default(true)
                     ->inline(),
+
+                TextInput::make('validations_contracted')
+                    ->label('Validaciones Contratadas')
+                    ->numeric()
+                    ->minValue(0)
+                    ->nullable()
+                    ->helperText('Déjalo vacío para validaciones ilimitadas')
+                    ->columnSpanFull(),
+
+                TextInput::make('validations_used')
+                    ->label('Validaciones Usadas')
+                    ->numeric()
+                    ->default(0)
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->helperText('Se incrementa automáticamente en cada validación')
+                    ->columnSpanFull(),
             ]);
     }
 
@@ -89,6 +111,11 @@ class InstitutionResource extends Resource
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
+                TextColumn::make('event')
+                    ->label('Event')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('-'),
                 TextColumn::make('slug')
                     ->label('Slug')
                     ->searchable()
@@ -137,8 +164,47 @@ class InstitutionResource extends Resource
                     ->sortable(false)
                     ->badge()
                     ->color('info'),
-                IconColumn::make('is_active')
-                    ->boolean(),
+                TextColumn::make('validations_contracted')
+                    ->label('Plan')
+                    ->state(fn (Institution $record): string => $record->validations_contracted === null
+                        ? 'Ilimitado'
+                        : number_format($record->validations_contracted))
+                    ->badge()
+                    ->color(fn (Institution $record): string => $record->validations_contracted === null ? 'gray' : 'primary'),
+                TextColumn::make('validations_used')
+                    ->label('Usadas')
+                    ->state(fn (Institution $record): string => number_format($record->validations_used))
+                    ->badge()
+                    ->color('warning'),
+                TextColumn::make('validations_remaining')
+                    ->label('Restantes')
+                    ->state(function (Institution $record): string {
+                        if ($record->validations_contracted === null) {
+                            return '∞';
+                        }
+
+                        $remaining = max(0, $record->validations_contracted - $record->validations_used);
+
+                        return (string) $remaining;
+                    })
+                    ->badge()
+                    ->color(function (Institution $record): string {
+                        if ($record->validations_contracted === null) {
+                            return 'gray';
+                        }
+
+                        $remaining = max(0, $record->validations_contracted - $record->validations_used);
+
+                        return match (true) {
+                            $remaining === 0 => 'danger',
+                            $remaining <= 10 => 'warning',
+                            default => 'success',
+                        };
+                    }),
+                ToggleColumn::make('is_active')
+                    ->label('Activa')
+                    ->onColor('success')
+                    ->offColor('danger'),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

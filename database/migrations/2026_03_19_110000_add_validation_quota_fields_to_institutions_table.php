@@ -1,0 +1,30 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('institutions', function (Blueprint $table) {
+            $table->unsignedInteger('validations_contracted')->nullable()->after('is_active');
+            $table->unsignedInteger('validations_used')->default(0)->after('validations_contracted');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('institutions', function (Blueprint $table) {
+            $table->dropColumn(['validations_contracted', 'validations_used']);
+        });
+    }
+};
+
