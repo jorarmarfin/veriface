@@ -458,6 +458,46 @@
             }
         }
 
+        async function getCameraStreamWithFallback() {
+            const constraintsList = [
+                {
+                    video: {
+                        facingMode: { ideal: 'user' },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                    },
+                    audio: false,
+                },
+                {
+                    video: {
+                        facingMode: { ideal: 'user' },
+                    },
+                    audio: false,
+                },
+                {
+                    video: true,
+                    audio: false,
+                },
+            ];
+
+            let lastError = null;
+
+            for (const constraints of constraintsList) {
+                try {
+                    return await navigator.mediaDevices.getUserMedia(constraints);
+                } catch (error) {
+                    lastError = error;
+                    console.warn('Intento de cámara fallido, probando fallback...', {
+                        constraints,
+                        name: error?.name,
+                        message: error?.message,
+                    });
+                }
+            }
+
+            throw lastError || new Error('No se pudo iniciar la cámara');
+        }
+
         // Inicializar cámara
         async function initCamera() {
             try {
@@ -474,15 +514,15 @@
                 canvas = document.getElementById('canvas');
                 ctx = canvas.getContext('2d');
 
+                // Si ya hay un stream previo, cerrarlo antes de abrir uno nuevo
+                if (video.srcObject) {
+                    const previousStream = video.srcObject;
+                    previousStream.getTracks().forEach(track => track.stop());
+                    video.srcObject = null;
+                }
+
                 // Obtener stream de cámara
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'user',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
-                    audio: false
-                });
+                const stream = await getCameraStreamWithFallback();
 
                 video.srcObject = stream;
                 video.muted = true; // Silenciar audio si hay
@@ -532,6 +572,9 @@
                 } else if (error.name === 'NotFoundError') {
                     errorMessage = 'Cámara no encontrada';
                     solution = 'Asegúrate de que tu dispositivo tiene cámara conectada.';
+                } else if (error.name === 'NotReadableError') {
+                    errorMessage = 'La cámara está en uso o no pudo iniciarse';
+                    solution = 'Cierra otras pestañas/apps que usen cámara y recarga la página.';
                 } else if (error.name === 'SecurityError') {
                     errorMessage = 'Error de seguridad - Se requiere HTTPS';
                     solution = 'Accede a través de HTTPS o localhost para usar la cámara.';
