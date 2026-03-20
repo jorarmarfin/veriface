@@ -16,6 +16,7 @@ class Institution extends Model
     protected $fillable = [
         'uuid',
         'name',
+        'event',
         'slug',
         'filepath',
         'rekognition_collection_id',

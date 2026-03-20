@@ -48,6 +48,11 @@ class InstitutionResource extends Resource
                     })
                     ->columnSpanFull(),
 
+                TextInput::make('event')
+                    ->label('Event')
+                    ->placeholder('Ej: Ceremonia Premiacion 2026')
+                    ->columnSpanFull(),
+
                 TextInput::make('slug')
                     ->label('URL Amigable (Slug)')
                     ->disabled()
@@ -106,6 +111,11 @@ class InstitutionResource extends Resource
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
+                TextColumn::make('event')
+                    ->label('Event')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('-'),
                 TextColumn::make('slug')
                     ->label('Slug')
                     ->searchable()

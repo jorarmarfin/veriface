@@ -169,6 +169,11 @@
                                         </div>
 
                                         <div>
+                                            <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Event</p>
+                                            <p class="text-sm text-white" id="person-event">-</p>
+                                        </div>
+
+                                        <div>
                                             <p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-2">Fecha Registro</p>
                                             <p class="text-sm text-white" id="person-date">-</p>
                                         </div>
@@ -250,6 +255,8 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <script>
         let video, canvas, ctx, overlayCanvas, overlayCtx;
         let faceDetector = null;
@@ -262,6 +269,24 @@
         let overlayEngine = 'none';
         const UUID = '{{ $uuid }}';
         const OVERLAY_DETECTION_INTERVAL_MS = 120;
+
+        function showMessage({ title, text = '', icon = 'info', confirmButtonText = 'Aceptar' }) {
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                return window.Swal.fire({
+                    title,
+                    text,
+                    icon,
+                    confirmButtonText,
+                    background: '#0f172a',
+                    color: '#e2e8f0',
+                    confirmButtonColor: '#2563eb',
+                });
+            }
+
+            const fallbackText = text ? `${title}\n${text}` : title;
+            alert(fallbackText);
+            return Promise.resolve();
+        }
 
         function clearOverlay() {
             if (!overlayCanvas || !overlayCtx) {
@@ -765,7 +790,11 @@
         // Capturar foto y enviar para análisis
         async function captureFace() {
             if (!video || !video.srcObject) {
-                alert('❌ La cámara no está disponible');
+                await showMessage({
+                    title: 'Cámara no disponible',
+                    text: 'No se pudo acceder a la cámara en este momento.',
+                    icon: 'error',
+                });
                 return;
             }
 
@@ -795,13 +824,28 @@
                     showResults(result.data);
                 } else if (result.type === 'no_match') {
                     showNoMatch();
+                } else if (result.type === 'quota_exceeded' || result.type === 'inactive') {
+                    await showMessage({
+                        title: 'Validación no disponible',
+                        text: result.message || 'La institución no puede validar en este momento.',
+                        icon: 'warning',
+                    });
+                    window.location.reload();
                 } else {
-                    alert('Error: ' + result.message);
+                    await showMessage({
+                        title: 'Error',
+                        text: result.message || 'Ocurrió un error al validar.',
+                        icon: 'error',
+                    });
                 }
 
             } catch (error) {
                 document.getElementById('loading-overlay').classList.add('hidden');
-                alert('Error: ' + error.message);
+                await showMessage({
+                    title: 'Error',
+                    text: error.message || 'Error inesperado en la validación.',
+                    icon: 'error',
+                });
             }
         }
 
@@ -814,6 +858,7 @@
             document.getElementById('person-names').textContent = data.names;
             document.getElementById('person-document').textContent = data.document_number;
             document.getElementById('person-institution').textContent = data.institution;
+            document.getElementById('person-event').textContent = data.event || '-';
             document.getElementById('person-date').textContent = data.created_at;
             document.getElementById('similarity-score').textContent = data.similarity + '%';
             document.getElementById('similarity-bar').style.width = data.similarity + '%';
@@ -854,6 +899,7 @@
             document.getElementById('initial-state').classList.add('hidden');
             document.getElementById('results-state').classList.add('hidden');
             document.getElementById('no-match-state').classList.remove('hidden');
+            document.getElementById('person-event').textContent = '-';
             renderMetadata(null);
 
             document.getElementById('status-list').innerHTML = `
@@ -872,10 +918,18 @@
         function copyToClipboard() {
             const text = document.getElementById('person-document').textContent;
             navigator.clipboard.writeText(text).then(() => {
-                alert('✅ Documento copiado al portapapeles');
+                showMessage({
+                    title: 'Documento copiado',
+                    text: 'El número de documento se copió al portapapeles.',
+                    icon: 'success',
+                });
             }).catch(err => {
                 console.error('Error al copiar:', err);
-                alert('⚠️ No se pudo copiar');
+                showMessage({
+                    title: 'No se pudo copiar',
+                    text: 'El navegador bloqueó el acceso al portapapeles.',
+                    icon: 'warning',
+                });
             });
         }
 
@@ -993,7 +1047,10 @@
             document.getElementById('no-match-state').classList.add('hidden');
         });
         document.getElementById('confirm-btn').addEventListener('click', () => {
-            alert('✅ Validación confirmada');
+            showMessage({
+                title: 'Validación confirmada',
+                icon: 'success',
+            });
         });
 
         window.addEventListener('beforeunload', () => {

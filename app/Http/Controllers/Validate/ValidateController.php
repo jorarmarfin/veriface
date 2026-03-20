@@ -239,6 +239,7 @@ class ValidateController extends Controller
                     'names' => $person->names,
                     'document_number' => $person->document_number,
                     'institution' => $institution->name,
+                    'event' => $institution->event,
                     'similarity' => round($similarity, 2),
                     'photo_url' => $photoUrl,
                     'created_at' => $person->created_at->format('Y-m-d'),
