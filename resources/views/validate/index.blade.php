@@ -45,6 +45,7 @@
                                 <div id="camera-container" class="w-full h-full bg-black flex items-center justify-center relative">
                                     <video id="video" autoplay playsinline class="w-full h-full object-cover hidden"></video>
                                     <canvas id="canvas" class="hidden"></canvas>
+                                    <canvas id="overlay-canvas" class="absolute inset-0 w-full h-full pointer-events-none hidden z-10"></canvas>
 
                                     <!-- Placeholder mientras carga -->
                                     <div id="video-placeholder" class="flex flex-col items-center justify-center">
@@ -245,8 +246,217 @@
     </div>
 
     <script>
-        let video, canvas, ctx;
+        let video, canvas, ctx, overlayCanvas, overlayCtx;
+        let faceDetector = null;
+        let overlayIntervalId = null;
+        let overlayEnabled = false;
+        let overlayBusy = false;
         const UUID = '{{ $uuid }}';
+        const OVERLAY_DETECTION_INTERVAL_MS = 120;
+
+        function clearOverlay() {
+            if (!overlayCanvas || !overlayCtx) {
+                return;
+            }
+
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+
+        function stopFaceOverlay() {
+            if (overlayIntervalId) {
+                clearInterval(overlayIntervalId);
+                overlayIntervalId = null;
+            }
+
+            overlayBusy = false;
+            clearOverlay();
+        }
+
+        function resizeOverlayCanvas() {
+            if (!overlayCanvas || !video) {
+                return;
+            }
+
+            const rect = overlayCanvas.getBoundingClientRect();
+            const width = Math.max(1, Math.round(rect.width));
+            const height = Math.max(1, Math.round(rect.height));
+
+            if (overlayCanvas.width !== width || overlayCanvas.height !== height) {
+                overlayCanvas.width = width;
+                overlayCanvas.height = height;
+            }
+        }
+
+        function mapVideoPointToOverlay(x, y) {
+            const overlayWidth = overlayCanvas.width;
+            const overlayHeight = overlayCanvas.height;
+            const videoWidth = video.videoWidth || 1;
+            const videoHeight = video.videoHeight || 1;
+
+            const scale = Math.max(overlayWidth / videoWidth, overlayHeight / videoHeight);
+            const renderedWidth = videoWidth * scale;
+            const renderedHeight = videoHeight * scale;
+            const offsetX = (overlayWidth - renderedWidth) / 2;
+            const offsetY = (overlayHeight - renderedHeight) / 2;
+
+            return {
+                x: (x * scale) + offsetX,
+                y: (y * scale) + offsetY,
+            };
+        }
+
+        function drawFaceVector(face) {
+            const box = face.boundingBox;
+            const topLeft = mapVideoPointToOverlay(box.x, box.y);
+            const topRight = mapVideoPointToOverlay(box.x + box.width, box.y);
+            const bottomRight = mapVideoPointToOverlay(box.x + box.width, box.y + box.height);
+            const bottomLeft = mapVideoPointToOverlay(box.x, box.y + box.height);
+
+            const center = {
+                x: (topLeft.x + topRight.x + bottomRight.x + bottomLeft.x) / 4,
+                y: (topLeft.y + topRight.y + bottomRight.y + bottomLeft.y) / 4,
+            };
+
+            overlayCtx.lineWidth = 2;
+            overlayCtx.strokeStyle = '#00d4ff';
+            overlayCtx.fillStyle = 'rgba(0, 212, 255, 0.12)';
+
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(topLeft.x, topLeft.y);
+            overlayCtx.lineTo(topRight.x, topRight.y);
+            overlayCtx.lineTo(bottomRight.x, bottomRight.y);
+            overlayCtx.lineTo(bottomLeft.x, bottomLeft.y);
+            overlayCtx.closePath();
+            overlayCtx.fill();
+            overlayCtx.stroke();
+
+            overlayCtx.strokeStyle = 'rgba(0, 212, 255, 0.55)';
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(topLeft.x, topLeft.y);
+            overlayCtx.lineTo(center.x, center.y);
+            overlayCtx.lineTo(topRight.x, topRight.y);
+            overlayCtx.moveTo(bottomLeft.x, bottomLeft.y);
+            overlayCtx.lineTo(center.x, center.y);
+            overlayCtx.lineTo(bottomRight.x, bottomRight.y);
+            overlayCtx.stroke();
+
+            const landmarks = Array.isArray(face.landmarks) ? face.landmarks : [];
+            if (!landmarks.length) {
+                return;
+            }
+
+            const grouped = { eye: [], nose: [], mouth: [] };
+
+            for (const landmark of landmarks) {
+                const type = landmark?.type;
+                const location = landmark?.location;
+                if (!location || !grouped[type]) {
+                    continue;
+                }
+                grouped[type].push(mapVideoPointToOverlay(location.x, location.y));
+            }
+
+            const eyes = grouped.eye;
+            const noses = grouped.nose;
+            const mouths = grouped.mouth;
+
+            const drawPoint = (point, radius = 3, color = '#ffffff') => {
+                overlayCtx.beginPath();
+                overlayCtx.fillStyle = color;
+                overlayCtx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+                overlayCtx.fill();
+            };
+
+            const drawLink = (a, b, color = 'rgba(255, 255, 255, 0.75)') => {
+                overlayCtx.beginPath();
+                overlayCtx.strokeStyle = color;
+                overlayCtx.lineWidth = 1.5;
+                overlayCtx.moveTo(a.x, a.y);
+                overlayCtx.lineTo(b.x, b.y);
+                overlayCtx.stroke();
+            };
+
+            eyes.forEach(point => drawPoint(point, 3.2));
+            noses.forEach(point => drawPoint(point, 3.2));
+            mouths.forEach(point => drawPoint(point, 3.2));
+
+            if (eyes.length >= 2) {
+                drawLink(eyes[0], eyes[1], 'rgba(0, 212, 255, 0.9)');
+            }
+
+            if (eyes.length && noses.length) {
+                drawLink(eyes[0], noses[0]);
+                if (eyes[1]) {
+                    drawLink(eyes[1], noses[0]);
+                }
+            }
+
+            if (noses.length && mouths.length) {
+                drawLink(noses[0], mouths[0], 'rgba(0, 212, 255, 0.8)');
+            }
+        }
+
+        async function detectAndDrawFaces() {
+            if (!overlayEnabled || !faceDetector || !video || !overlayCanvas || overlayBusy) {
+                return;
+            }
+
+            if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                return;
+            }
+
+            overlayBusy = true;
+            try {
+                resizeOverlayCanvas();
+                clearOverlay();
+
+                const faces = await faceDetector.detect(video);
+                for (const face of faces) {
+                    drawFaceVector(face);
+                }
+            } catch (error) {
+                console.warn('No se pudo dibujar el overlay de rostro:', error);
+                overlayEnabled = false;
+                stopFaceOverlay();
+            } finally {
+                overlayBusy = false;
+            }
+        }
+
+        async function setupFaceOverlay() {
+            overlayCanvas = document.getElementById('overlay-canvas');
+            if (!overlayCanvas) {
+                return;
+            }
+
+            overlayCtx = overlayCanvas.getContext('2d');
+
+            if (!('FaceDetector' in window)) {
+                document.getElementById('device-status').textContent = 'Conectada (sin vectores: navegador no compatible)';
+                overlayEnabled = false;
+                return;
+            }
+
+            try {
+                faceDetector = new FaceDetector({
+                    fastMode: true,
+                    maxDetectedFaces: 1,
+                });
+                overlayEnabled = true;
+                overlayCanvas.classList.remove('hidden');
+                resizeOverlayCanvas();
+
+                if (overlayIntervalId) {
+                    clearInterval(overlayIntervalId);
+                }
+
+                overlayIntervalId = setInterval(detectAndDrawFaces, OVERLAY_DETECTION_INTERVAL_MS);
+                window.addEventListener('resize', resizeOverlayCanvas);
+            } catch (error) {
+                console.warn('FaceDetector no pudo inicializarse:', error);
+                overlayEnabled = false;
+            }
+        }
 
         // Inicializar cámara
         async function initCamera() {
@@ -307,6 +517,7 @@
                 }
 
                 await videoReadyPromise;
+                await setupFaceOverlay();
 
             } catch (error) {
                 console.error('❌ Error al acceder a la cámara:', error);
@@ -473,6 +684,10 @@
         });
         document.getElementById('confirm-btn').addEventListener('click', () => {
             alert('✅ Validación confirmada');
+        });
+
+        window.addEventListener('beforeunload', () => {
+            stopFaceOverlay();
         });
 
         // Inicializar al cargar
