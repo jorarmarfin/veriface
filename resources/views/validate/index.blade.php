@@ -248,9 +248,13 @@
     <script>
         let video, canvas, ctx, overlayCanvas, overlayCtx;
         let faceDetector = null;
+        let mediaPipeFaceMesh = null;
         let overlayIntervalId = null;
+        let overlayRafId = null;
+        let overlayResizeBound = false;
         let overlayEnabled = false;
         let overlayBusy = false;
+        let overlayEngine = 'none';
         const UUID = '{{ $uuid }}';
         const OVERLAY_DETECTION_INTERVAL_MS = 120;
 
@@ -268,7 +272,14 @@
                 overlayIntervalId = null;
             }
 
+            if (overlayRafId) {
+                cancelAnimationFrame(overlayRafId);
+                overlayRafId = null;
+            }
+
             overlayBusy = false;
+            overlayEnabled = false;
+            overlayEngine = 'none';
             clearOverlay();
         }
 
@@ -396,6 +407,142 @@
             }
         }
 
+        function loadExternalScript(src) {
+            return new Promise((resolve, reject) => {
+                const existing = document.querySelector(`script[data-src="${src}"]`);
+                if (existing) {
+                    if (existing.getAttribute('data-loaded') === 'true') {
+                        resolve();
+                        return;
+                    }
+
+                    existing.addEventListener('load', () => resolve(), { once: true });
+                    existing.addEventListener('error', () => reject(new Error(`No se pudo cargar ${src}`)), { once: true });
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.src = src;
+                script.async = true;
+                script.defer = true;
+                script.setAttribute('data-src', src);
+                script.addEventListener('load', () => {
+                    script.setAttribute('data-loaded', 'true');
+                    resolve();
+                }, { once: true });
+                script.addEventListener('error', () => reject(new Error(`No se pudo cargar ${src}`)), { once: true });
+                document.head.appendChild(script);
+            });
+        }
+
+        function drawMediaPipeFace(landmarks) {
+            if (!overlayCtx || typeof drawConnectors !== 'function') {
+                return;
+            }
+
+            if (typeof FACEMESH_TESSELATION !== 'undefined') {
+                drawConnectors(overlayCtx, landmarks, FACEMESH_TESSELATION, {
+                    color: 'rgba(0, 212, 255, 0.32)',
+                    lineWidth: 1,
+                });
+            }
+
+            const contourSets = [
+                typeof FACEMESH_FACE_OVAL !== 'undefined' ? FACEMESH_FACE_OVAL : null,
+                typeof FACEMESH_LEFT_EYE !== 'undefined' ? FACEMESH_LEFT_EYE : null,
+                typeof FACEMESH_RIGHT_EYE !== 'undefined' ? FACEMESH_RIGHT_EYE : null,
+                typeof FACEMESH_LEFT_EYEBROW !== 'undefined' ? FACEMESH_LEFT_EYEBROW : null,
+                typeof FACEMESH_RIGHT_EYEBROW !== 'undefined' ? FACEMESH_RIGHT_EYEBROW : null,
+                typeof FACEMESH_LIPS !== 'undefined' ? FACEMESH_LIPS : null,
+                typeof FACEMESH_NOSE !== 'undefined' ? FACEMESH_NOSE : null,
+            ].filter(Boolean);
+
+            for (const contour of contourSets) {
+                drawConnectors(overlayCtx, landmarks, contour, {
+                    color: '#00d4ff',
+                    lineWidth: 1.4,
+                });
+            }
+        }
+
+        function onMediaPipeResults(results) {
+            if (!overlayEnabled || overlayEngine !== 'mediapipe') {
+                return;
+            }
+
+            resizeOverlayCanvas();
+            clearOverlay();
+
+            const faces = results?.multiFaceLandmarks || [];
+            for (const landmarks of faces) {
+                drawMediaPipeFace(landmarks);
+            }
+        }
+
+        function startMediaPipeLoop() {
+            if (overlayRafId) {
+                cancelAnimationFrame(overlayRafId);
+                overlayRafId = null;
+            }
+
+            const tick = async () => {
+                if (!overlayEnabled || overlayEngine !== 'mediapipe') {
+                    return;
+                }
+
+                overlayRafId = requestAnimationFrame(tick);
+
+                if (overlayBusy || !mediaPipeFaceMesh || !video) {
+                    return;
+                }
+
+                if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                    return;
+                }
+
+                overlayBusy = true;
+                try {
+                    await mediaPipeFaceMesh.send({ image: video });
+                } catch (error) {
+                    console.warn('MediaPipe no pudo procesar el frame:', error);
+                    stopFaceOverlay();
+                    document.getElementById('device-status').textContent = 'Conectada (sin vectores)';
+                } finally {
+                    overlayBusy = false;
+                }
+            };
+
+            overlayRafId = requestAnimationFrame(tick);
+        }
+
+        async function setupMediaPipeOverlay() {
+            await loadExternalScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js');
+            await loadExternalScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
+
+            if (typeof FaceMesh === 'undefined') {
+                throw new Error('FaceMesh no está disponible');
+            }
+
+            mediaPipeFaceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+            });
+
+            mediaPipeFaceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5,
+            });
+
+            mediaPipeFaceMesh.onResults(onMediaPipeResults);
+
+            overlayEngine = 'mediapipe';
+            overlayEnabled = true;
+            overlayCanvas.classList.remove('hidden');
+            resizeOverlayCanvas();
+            startMediaPipeLoop();
+        }
+
         async function detectAndDrawFaces() {
             if (!overlayEnabled || !faceDetector || !video || !overlayCanvas || overlayBusy) {
                 return;
@@ -430,31 +577,43 @@
             }
 
             overlayCtx = overlayCanvas.getContext('2d');
+            stopFaceOverlay();
 
-            if (!('FaceDetector' in window)) {
-                document.getElementById('device-status').textContent = 'Conectada (sin vectores: navegador no compatible)';
-                overlayEnabled = false;
-                return;
+            if (!overlayResizeBound) {
+                window.addEventListener('resize', resizeOverlayCanvas);
+                overlayResizeBound = true;
+            }
+
+            if ('FaceDetector' in window) {
+                try {
+                    faceDetector = new FaceDetector({
+                        fastMode: true,
+                        maxDetectedFaces: 1,
+                    });
+                    overlayEngine = 'face-detector';
+                    overlayEnabled = true;
+                    overlayCanvas.classList.remove('hidden');
+                    resizeOverlayCanvas();
+
+                    if (overlayIntervalId) {
+                        clearInterval(overlayIntervalId);
+                    }
+
+                    overlayIntervalId = setInterval(detectAndDrawFaces, OVERLAY_DETECTION_INTERVAL_MS);
+                    document.getElementById('device-status').textContent = 'Conectada (vectores activos)';
+                    return;
+                } catch (error) {
+                    console.warn('FaceDetector no pudo inicializarse:', error);
+                }
             }
 
             try {
-                faceDetector = new FaceDetector({
-                    fastMode: true,
-                    maxDetectedFaces: 1,
-                });
-                overlayEnabled = true;
-                overlayCanvas.classList.remove('hidden');
-                resizeOverlayCanvas();
-
-                if (overlayIntervalId) {
-                    clearInterval(overlayIntervalId);
-                }
-
-                overlayIntervalId = setInterval(detectAndDrawFaces, OVERLAY_DETECTION_INTERVAL_MS);
-                window.addEventListener('resize', resizeOverlayCanvas);
+                await setupMediaPipeOverlay();
+                document.getElementById('device-status').textContent = 'Conectada (vectores activos)';
             } catch (error) {
-                console.warn('FaceDetector no pudo inicializarse:', error);
-                overlayEnabled = false;
+                console.warn('No se pudo activar overlay con MediaPipe:', error);
+                stopFaceOverlay();
+                document.getElementById('device-status').textContent = 'Conectada (sin vectores: navegador no compatible)';
             }
         }
 
