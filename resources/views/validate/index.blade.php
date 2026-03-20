@@ -267,6 +267,8 @@
         let overlayEnabled = false;
         let overlayBusy = false;
         let overlayEngine = 'none';
+        let analyzeInProgress = false;
+        let latestAnalyzeRequestId = 0;
         const UUID = '{{ $uuid }}';
         const OVERLAY_DETECTION_INTERVAL_MS = 120;
 
@@ -294,6 +296,44 @@
             }
 
             overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+
+        function setAnalyzeButtonLoading(isLoading) {
+            const analyzeBtn = document.getElementById('analyze-btn');
+            if (!analyzeBtn) {
+                return;
+            }
+
+            analyzeBtn.disabled = isLoading;
+            analyzeBtn.classList.toggle('opacity-60', isLoading);
+            analyzeBtn.classList.toggle('cursor-not-allowed', isLoading);
+        }
+
+        function resetPersonPhoto() {
+            const photoImg = document.getElementById('person-photo');
+            const photoSection = document.getElementById('photo-section');
+
+            if (photoImg) {
+                photoImg.classList.remove('opacity-50');
+                photoImg.src = '';
+            }
+
+            if (photoSection) {
+                photoSection.classList.add('hidden');
+            }
+        }
+
+        async function waitForFreshVideoFrame() {
+            if (!video) {
+                return;
+            }
+
+            if (typeof video.requestVideoFrameCallback === 'function') {
+                await new Promise((resolve) => video.requestVideoFrameCallback(() => resolve()));
+                return;
+            }
+
+            await new Promise((resolve) => requestAnimationFrame(() => resolve()));
         }
 
         function stopFaceOverlay() {
@@ -789,6 +829,10 @@
 
         // Capturar foto y enviar para análisis
         async function captureFace() {
+            if (analyzeInProgress) {
+                return;
+            }
+
             if (!video || !video.srcObject) {
                 await showMessage({
                     title: 'Cámara no disponible',
@@ -798,18 +842,51 @@
                 return;
             }
 
+            if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                await showMessage({
+                    title: 'Cámara no lista',
+                    text: 'Espera un momento y vuelve a intentar.',
+                    icon: 'warning',
+                });
+                return;
+            }
+
             try {
+                analyzeInProgress = true;
+                const requestId = ++latestAnalyzeRequestId;
+                setAnalyzeButtonLoading(true);
+
+                await waitForFreshVideoFrame();
+
+                const frameWidth = video.videoWidth || canvas.width;
+                const frameHeight = video.videoHeight || canvas.height;
+
+                if (!frameWidth || !frameHeight) {
+                    throw new Error('No se pudo obtener un frame válido de la cámara.');
+                }
+
+                if (canvas.width !== frameWidth || canvas.height !== frameHeight) {
+                    canvas.width = frameWidth;
+                    canvas.height = frameHeight;
+                }
+
                 // Dibujar frame actual en canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
                 // Convertir a base64
-                const imageData = canvas.toDataURL('image/jpeg', 0.9);
+                const imageData = canvas.toDataURL('image/jpeg', 0.95);
+
+                if (!imageData || imageData.length < 64) {
+                    throw new Error('No se pudo generar una captura válida.');
+                }
 
                 // Mostrar loading
                 document.getElementById('loading-overlay').classList.remove('hidden');
 
                 const response = await fetch(`/validate/${UUID}/analyze`, {
                     method: 'POST',
+                    cache: 'no-store',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
@@ -818,6 +895,10 @@
                 });
 
                 const result = await response.json();
+                if (requestId !== latestAnalyzeRequestId) {
+                    return;
+                }
+
                 document.getElementById('loading-overlay').classList.add('hidden');
 
                 if (result.success) {
@@ -846,6 +927,10 @@
                     text: error.message || 'Error inesperado en la validación.',
                     icon: 'error',
                 });
+            } finally {
+                analyzeInProgress = false;
+                setAnalyzeButtonLoading(false);
+                document.getElementById('loading-overlay').classList.add('hidden');
             }
         }
 
@@ -867,14 +952,17 @@
             // Mostrar foto si existe
             if (data.photo_url) {
                 const photoImg = document.getElementById('person-photo');
-                photoImg.src = data.photo_url;
+                const separator = data.photo_url.includes('?') ? '&' : '?';
+                const cacheBust = `v=${Date.now()}-${encodeURIComponent(data.document_number || '')}`;
+                photoImg.src = `${data.photo_url}${separator}${cacheBust}`;
+                photoImg.classList.remove('opacity-50');
                 photoImg.onerror = function() {
                     this.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" class="w-48 h-48" fill="none" viewBox="0 0 24 24" stroke="currentColor"%3E%3Cpath stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/%3E%3C/svg%3E';
                     this.classList.add('opacity-50');
                 };
                 document.getElementById('photo-section').classList.remove('hidden');
             } else {
-                document.getElementById('photo-section').classList.add('hidden');
+                resetPersonPhoto();
             }
 
             // Actualizar estado
@@ -899,6 +987,7 @@
             document.getElementById('initial-state').classList.add('hidden');
             document.getElementById('results-state').classList.add('hidden');
             document.getElementById('no-match-state').classList.remove('hidden');
+            resetPersonPhoto();
             document.getElementById('person-event').textContent = '-';
             renderMetadata(null);
 
@@ -1041,10 +1130,12 @@
             document.getElementById('initial-state').classList.remove('hidden');
             document.getElementById('results-state').classList.add('hidden');
             document.getElementById('no-match-state').classList.add('hidden');
+            resetPersonPhoto();
         });
         document.getElementById('no-match-retry-btn').addEventListener('click', () => {
             document.getElementById('initial-state').classList.remove('hidden');
             document.getElementById('no-match-state').classList.add('hidden');
+            resetPersonPhoto();
         });
         document.getElementById('confirm-btn').addEventListener('click', () => {
             showMessage({

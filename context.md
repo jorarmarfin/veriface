@@ -1,6 +1,6 @@
 # Contexto del sistema VeriFace
 
-Última actualización de este contexto: 19 de marzo de 2026.
+Última actualización de este contexto: 20 de marzo de 2026.
 
 ## 1) Resumen general
 
@@ -31,14 +31,16 @@ Flujo:
 
 - La vista pública usa cámara del navegador (`getUserMedia`), captura imagen en base64 y hace POST al endpoint de análisis.
 - El controlador de validación:
-- Verifica institución por `uuid`.
-- Verifica que esté activa.
-- Verifica que tenga colección Rekognition asociada.
-- Busca coincidencias en Rekognition (`searchFacesByImage`).
-- Mapea `external_image_id` a `document_number` (quitando extensión de archivo).
-- Busca la persona en BD (`people`).
-- Registra resultado en `validation_logs` (éxito o no match).
-- Devuelve datos de persona y similitud para mostrar en UI.
+  - Verifica institución por `uuid`.
+  - Verifica que esté activa.
+  - Verifica límite de validaciones contratadas.
+  - Verifica que tenga colección Rekognition asociada.
+  - Consume una validación de forma atómica para evitar sobrepasar cuota por concurrencia.
+  - Busca coincidencias en Rekognition (`searchFacesByImage`).
+  - Mapea `external_image_id` a `document_number` (quitando extensión de archivo).
+  - Busca la persona en BD (`people`).
+  - Registra resultado en `validation_logs` para `match`, `no_match` y errores de búsqueda en Rekognition.
+  - Devuelve datos de persona y similitud para mostrar en UI.
 
 Archivos clave:
 
@@ -166,13 +168,14 @@ Archivos en `app/Console/Commands`:
 Este análisis fue estático, sin ejecutar la app completa. Se observó:
 
 - El repositorio estaba limpio en git al momento de revisar.
-- No existía carpeta `vendor` en ese momento, por lo que no se pudo correr `php artisan` ni tests.
+- Existe carpeta `vendor` en el estado actual revisado.
+- No se ejecutaron `php artisan` ni tests durante este análisis.
 
 ## 7) Observaciones técnicas a tener presentes
 
 - Existe `routes/api.php` con endpoints de Rekognition (`/api/v1/...`) y middleware `auth:sanctum`.
-- En `bootstrap/app.php` solo se registran rutas web/console, no se observó registro explícito de `routes/api.php` en el estado revisado.
-- No se observó `laravel/sanctum` en `composer.json` revisado, pese a que la API usa `auth:sanctum`.
+- En `bootstrap/app.php` solo se registran rutas web/console; actualmente no hay registro explícito de `routes/api.php`.
+- No se observa `laravel/sanctum` en `composer.json`, pese a que la API usa `auth:sanctum`.
 - En API, la validación de `collection_id` usa `unique:collections`; la tabla del proyecto es `rekognition_collections`.
 - En una parte de Filament se usa `face_id` singular al guardar resultado de indexación, mientras el servicio retorna `face_ids` (array). Conviene alinear.
 
@@ -181,7 +184,8 @@ Este análisis fue estático, sin ejecutar la app completa. Se observó:
 - El enlace público de validación se resuelve por `Institution.uuid`.
 - La correspondencia persona <-> rostro en validación depende de `external_image_id` en Rekognition, normalmente basado en nombre de archivo.
 - El `document_number` de la persona se infiere desde el nombre del archivo (sin extensión) al validar coincidencias.
-- Los logs de validación se guardan siempre con `institution_id`, `document_number`, `similarity`, `matched`, `validated_at`.
+- La cuota de validaciones se consume por intento válido de análisis (antes de consultar Rekognition), no solo por match exitoso.
+- Los logs de validación se guardan con `institution_id`, `document_number`, `similarity`, `matched`, `validated_at` en respuestas de `match`, `no_match` y error de búsqueda; no en todos los retornos tempranos de validación previa.
 
 ## 9) Archivos clave de referencia rápida
 
