@@ -368,11 +368,37 @@
             }
         }
 
-        function mapVideoPointToOverlay(x, y) {
+        function isVideoMirrored() {
+            if (!video) {
+                return false;
+            }
+
+            const transform = window.getComputedStyle(video).transform;
+            if (!transform || transform === 'none') {
+                return false;
+            }
+
+            const matrix2d = transform.match(/^matrix\(([^)]+)\)$/);
+            if (matrix2d) {
+                const values = matrix2d[1].split(',').map((value) => Number.parseFloat(value.trim()));
+                return Number.isFinite(values[0]) && values[0] < 0;
+            }
+
+            const matrix3d = transform.match(/^matrix3d\(([^)]+)\)$/);
+            if (matrix3d) {
+                const values = matrix3d[1].split(',').map((value) => Number.parseFloat(value.trim()));
+                return Number.isFinite(values[0]) && values[0] < 0;
+            }
+
+            return false;
+        }
+
+        function mapVideoPointToOverlay(x, y, mirrored = false) {
             const overlayWidth = overlayCanvas.width;
             const overlayHeight = overlayCanvas.height;
             const videoWidth = video.videoWidth || 1;
             const videoHeight = video.videoHeight || 1;
+            const sourceX = mirrored ? (videoWidth - x) : x;
 
             const scale = Math.max(overlayWidth / videoWidth, overlayHeight / videoHeight);
             const renderedWidth = videoWidth * scale;
@@ -381,17 +407,18 @@
             const offsetY = (overlayHeight - renderedHeight) / 2;
 
             return {
-                x: (x * scale) + offsetX,
+                x: (sourceX * scale) + offsetX,
                 y: (y * scale) + offsetY,
             };
         }
 
         function drawFaceVector(face) {
             const box = face.boundingBox;
-            const topLeft = mapVideoPointToOverlay(box.x, box.y);
-            const topRight = mapVideoPointToOverlay(box.x + box.width, box.y);
-            const bottomRight = mapVideoPointToOverlay(box.x + box.width, box.y + box.height);
-            const bottomLeft = mapVideoPointToOverlay(box.x, box.y + box.height);
+            const mirrored = isVideoMirrored();
+            const topLeft = mapVideoPointToOverlay(box.x, box.y, mirrored);
+            const topRight = mapVideoPointToOverlay(box.x + box.width, box.y, mirrored);
+            const bottomRight = mapVideoPointToOverlay(box.x + box.width, box.y + box.height, mirrored);
+            const bottomLeft = mapVideoPointToOverlay(box.x, box.y + box.height, mirrored);
 
             const center = {
                 x: (topLeft.x + topRight.x + bottomRight.x + bottomLeft.x) / 4,
@@ -434,7 +461,7 @@
                 if (!location || !grouped[type]) {
                     continue;
                 }
-                grouped[type].push(mapVideoPointToOverlay(location.x, location.y));
+                grouped[type].push(mapVideoPointToOverlay(location.x, location.y, mirrored));
             }
 
             const eyes = grouped.eye;
@@ -505,16 +532,54 @@
             });
         }
 
-        function drawMediaPipeFace(landmarks) {
-            if (!overlayCtx || typeof drawConnectors !== 'function') {
+        function mapMediaPipeLandmarkToOverlay(landmark, mirrored = false) {
+            const normalizedX = Number(landmark?.x);
+            const normalizedY = Number(landmark?.y);
+            const videoWidth = video?.videoWidth || 1;
+            const videoHeight = video?.videoHeight || 1;
+
+            const pointX = (Number.isFinite(normalizedX) ? normalizedX : 0) * videoWidth;
+            const pointY = (Number.isFinite(normalizedY) ? normalizedY : 0) * videoHeight;
+
+            return mapVideoPointToOverlay(pointX, pointY, mirrored);
+        }
+
+        function drawMappedConnections(points, connections, color, lineWidth = 1) {
+            if (!overlayCtx || !Array.isArray(points) || !Array.isArray(connections) || !connections.length) {
                 return;
             }
 
+            overlayCtx.strokeStyle = color;
+            overlayCtx.lineWidth = lineWidth;
+            overlayCtx.beginPath();
+
+            for (const connection of connections) {
+                const startIndex = Array.isArray(connection) ? connection[0] : connection?.start;
+                const endIndex = Array.isArray(connection) ? connection[1] : connection?.end;
+
+                const from = points[Number(startIndex)];
+                const to = points[Number(endIndex)];
+                if (!from || !to) {
+                    continue;
+                }
+
+                overlayCtx.moveTo(from.x, from.y);
+                overlayCtx.lineTo(to.x, to.y);
+            }
+
+            overlayCtx.stroke();
+        }
+
+        function drawMediaPipeFace(landmarks) {
+            if (!overlayCtx || !video || !Array.isArray(landmarks) || !landmarks.length) {
+                return;
+            }
+
+            const mirrored = isVideoMirrored();
+            const points = landmarks.map((landmark) => mapMediaPipeLandmarkToOverlay(landmark, mirrored));
+
             if (typeof FACEMESH_TESSELATION !== 'undefined') {
-                drawConnectors(overlayCtx, landmarks, FACEMESH_TESSELATION, {
-                    color: 'rgba(0, 212, 255, 0.32)',
-                    lineWidth: 1,
-                });
+                drawMappedConnections(points, FACEMESH_TESSELATION, 'rgba(0, 212, 255, 0.32)', 1);
             }
 
             const contourSets = [
@@ -528,10 +593,7 @@
             ].filter(Boolean);
 
             for (const contour of contourSets) {
-                drawConnectors(overlayCtx, landmarks, contour, {
-                    color: '#00d4ff',
-                    lineWidth: 1.4,
-                });
+                drawMappedConnections(points, contour, '#00d4ff', 1.4);
             }
         }
 
