@@ -56,7 +56,6 @@ class InstitutionResource extends Resource
 
                 TextInput::make('slug')
                     ->label('URL Amigable (Slug)')
-                    ->disabled()
                     ->dehydrated(true)
                     ->helperText('Se genera automáticamente desde el nombre')
                     ->columnSpanFull(),

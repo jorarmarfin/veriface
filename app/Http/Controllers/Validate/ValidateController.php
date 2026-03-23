@@ -42,7 +42,7 @@ class ValidateController extends Controller
             ]);
         }
 
-        return view('validate.index', [
+        return view($this->resolveValidationView($institution), [
             'institution' => $institution,
             'uuid' => $uuid,
         ]);
@@ -405,5 +405,25 @@ class ValidateController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Resuelve la vista pública de validación.
+     * Si existe una vista por slug en validate/custom/{slug}.blade.php la usa,
+     * de lo contrario usa la vista general validate.index.
+     */
+    private function resolveValidationView(Institution $institution): string
+    {
+        $rawSlug = strtolower(trim((string) $institution->slug));
+        $safeSlug = trim((string) preg_replace('/[^a-z0-9-]+/', '-', $rawSlug), '-');
+
+        if ($safeSlug !== '') {
+            $customView = "validate.custom.{$safeSlug}";
+            if (view()->exists($customView)) {
+                return $customView;
+            }
+        }
+
+        return 'validate.index';
     }
 }
