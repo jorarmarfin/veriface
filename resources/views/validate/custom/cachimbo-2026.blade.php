@@ -176,6 +176,8 @@
         let overlayEnabled = false;
         let overlayBusy = false;
         let overlayEngine = 'none';
+        let latestAnalyzeRequestId = 0;
+        const quotaBlocked = INITIAL_REMAINING !== null && Number(INITIAL_REMAINING) <= 0;
         const OVERLAY_DETECTION_INTERVAL_MS = 120;
 
         const icons = {
@@ -258,6 +260,57 @@
             welcomeLine.textContent = DEFAULT_WELCOME;
         }
 
+        function isResultPreviewVisible() {
+            const matchPreview = document.getElementById('match-preview');
+            const noMatchPreview = document.getElementById('no-match-preview');
+
+            const matchVisible = matchPreview && !matchPreview.classList.contains('hidden');
+            const noMatchVisible = noMatchPreview && !noMatchPreview.classList.contains('hidden');
+
+            return Boolean(matchVisible || noMatchVisible);
+        }
+
+        function refreshAnalyzeButtonState() {
+            const analyzeBtn = document.getElementById('analyze-btn');
+            if (!analyzeBtn) {
+                return;
+            }
+
+            const shouldDisable = quotaBlocked || analyzeInProgress || isResultPreviewVisible();
+            analyzeBtn.disabled = shouldDisable;
+        }
+
+        function resetResultPreviewData() {
+            const photo = document.getElementById('matched-photo');
+            const caption = document.getElementById('matched-photo-caption');
+            const noMatchMessage = document.getElementById('no-match-message');
+
+            if (photo) {
+                photo.src = '';
+            }
+
+            if (caption) {
+                caption.textContent = '';
+            }
+
+            if (noMatchMessage) {
+                noMatchMessage.textContent = 'No se encontro coincidencia en el registro.';
+            }
+        }
+
+        async function waitForFreshVideoFrame() {
+            if (!video) {
+                return;
+            }
+
+            if (typeof video.requestVideoFrameCallback === 'function') {
+                await new Promise((resolve) => video.requestVideoFrameCallback(() => resolve()));
+                return;
+            }
+
+            await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        }
+
         function showLiveCameraRegion() {
             const matchPreview = document.getElementById('match-preview');
             const noMatchPreview = document.getElementById('no-match-preview');
@@ -284,6 +337,8 @@
             if (placeholder) {
                 placeholder.classList.add('hidden');
             }
+
+            refreshAnalyzeButtonState();
         }
 
         function showMatchPreview(data) {
@@ -326,6 +381,8 @@
                 matchPreview.classList.remove('hidden');
                 matchPreview.classList.add('flex');
             }
+
+            refreshAnalyzeButtonState();
         }
 
         function showNoMatchPreview(message) {
@@ -361,6 +418,8 @@
                 noMatchPreview.classList.remove('hidden');
                 noMatchPreview.classList.add('flex');
             }
+
+            refreshAnalyzeButtonState();
         }
 
         function clearOverlay() {
@@ -811,15 +870,21 @@
                 cameraStatus.classList.add('text-red-300');
                 cameraMessage.textContent = error?.message || 'No se pudo inicializar la camara.';
             }
+
+            refreshAnalyzeButtonState();
         }
 
         function setAnalyzeLoading(isLoading) {
-            const analyzeBtn = document.getElementById('analyze-btn');
-            analyzeBtn.disabled = isLoading;
+            analyzeInProgress = isLoading;
+            refreshAnalyzeButtonState();
         }
 
         async function captureAndAnalyze() {
             if (analyzeInProgress) {
+                return;
+            }
+
+            if (isResultPreviewVisible()) {
                 return;
             }
 
@@ -837,14 +902,17 @@
             document.getElementById('loading-overlay').classList.remove('hidden');
             setStatusView('ready');
             document.getElementById('primary-message').textContent = 'Validando identidad...';
+            const requestId = ++latestAnalyzeRequestId;
 
             try {
+                await waitForFreshVideoFrame();
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const imageData = canvas.toDataURL('image/jpeg', 0.95);
 
                 const response = await fetch(`/validate/${UUID}/analyze`, {
                     method: 'POST',
+                    cache: 'no-store',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
@@ -853,6 +921,9 @@
                 });
 
                 const result = await response.json();
+                if (requestId !== latestAnalyzeRequestId) {
+                    return;
+                }
 
                 if (result.success) {
                     setStatusView('success', {
@@ -900,7 +971,9 @@
         }
 
         async function acceptAndReset() {
+            latestAnalyzeRequestId++;
             setStatusView('ready');
+            resetResultPreviewData();
             showLiveCameraRegion();
 
             if (!video || !video.srcObject) {
@@ -909,12 +982,13 @@
             }
 
             await setupFaceOverlay();
+            refreshAnalyzeButtonState();
         }
 
         document.getElementById('analyze-btn').addEventListener('click', captureAndAnalyze);
         document.getElementById('accept-btn').addEventListener('click', acceptAndReset);
 
-        if (INITIAL_REMAINING !== null && Number(INITIAL_REMAINING) <= 0) {
+        if (quotaBlocked) {
             document.getElementById('analyze-btn').disabled = true;
             document.getElementById('camera-status').textContent = 'Sin cuota disponible';
             document.getElementById('camera-status').classList.remove('text-cyan-300');
@@ -926,6 +1000,8 @@
         });
 
         setStatusView('ready');
+        resetResultPreviewData();
+        refreshAnalyzeButtonState();
         initCamera();
     </script>
 </body>
