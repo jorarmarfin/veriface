@@ -1,6 +1,6 @@
 # Contexto del sistema VeriFace
 
-Última actualización de este contexto: 20 de marzo de 2026.
+Última actualización de este contexto: 23 de marzo de 2026.
 
 ## 1) Resumen general
 
@@ -24,7 +24,7 @@ Objetivo funcional:
 
 Rutas web:
 
-- `GET /validate/{uuid}`: muestra interfaz de validación por institución.
+- `GET /validate/{uuid}`: muestra interfaz de validación por institución (vista base o personalizada por `slug`).
 - `POST /validate/{uuid}/analyze`: captura la imagen y ejecuta búsqueda facial.
 
 Flujo:
@@ -34,6 +34,9 @@ Flujo:
   - Verifica institución por `uuid`.
   - Verifica que esté activa.
   - Verifica límite de validaciones contratadas.
+  - Resuelve vista de validación por `slug`:
+    - si existe `resources/views/validate/custom/{slug}.blade.php`, usa esa vista.
+    - si no existe, usa `resources/views/validate/index.blade.php`.
   - Verifica que tenga colección Rekognition asociada.
   - Consume una validación de forma atómica para evitar sobrepasar cuota por concurrencia.
   - Busca coincidencias en Rekognition (`searchFacesByImage`).
@@ -47,6 +50,7 @@ Archivos clave:
 - `routes/web.php`
 - `app/Http/Controllers/Validate/ValidateController.php`
 - `resources/views/validate/index.blade.php`
+- `resources/views/validate/custom/cachimbo-2026.blade.php`
 - `resources/views/validate/inactive.blade.php`
 
 ### 2.2 Panel Filament (administración)
@@ -182,6 +186,7 @@ Este análisis fue estático, sin ejecutar la app completa. Se observó:
 ## 8) Convenciones actuales de negocio
 
 - El enlace público de validación se resuelve por `Institution.uuid`.
+- El frontend público puede personalizarse por institución usando `Institution.slug` (sin cambiar la ruta).
 - La correspondencia persona <-> rostro en validación depende de `external_image_id` en Rekognition, normalmente basado en nombre de archivo.
 - El `document_number` de la persona se infiere desde el nombre del archivo (sin extensión) al validar coincidencias.
 - La cuota de validaciones se consume por intento válido de análisis (antes de consultar Rekognition), no solo por match exitoso.
@@ -204,6 +209,7 @@ Este análisis fue estático, sin ejecutar la app completa. Se observó:
 - `routes/api.php`
 - `config/aws.php`
 - `config/filesystems.php`
+- `resources/views/validate/custom/cachimbo-2026.blade.php`
 
 ## 10) Política rápida de secretos (git)
 
@@ -211,3 +217,26 @@ Este análisis fue estático, sin ejecutar la app completa. Se observó:
 - Usar siempre `.env` local para secretos.
 - Confirmar antes de cada commit que no se incluyeron secretos en archivos `.md`, scripts o código.
 - En este `context.md` solo deben existir nombres de variables y configuración referencial, nunca valores sensibles.
+
+## 11) Personalización de validación por slug (estado actual)
+
+- Se implementó resolución dinámica de vista en `ValidateController@index` mediante `resolveValidationView`.
+- Regla:
+  - `validate.custom.{slug}` si existe.
+  - fallback a `validate.index` si no existe.
+- Primer template personalizado implementado:
+  - `slug`: `cachimbo-2026`
+  - vista: `resources/views/validate/custom/cachimbo-2026.blade.php`
+- Comportamiento del template `cachimbo-2026`:
+  - Mantiene flujo de validación contra `POST /validate/{uuid}/analyze`.
+  - Mantiene restricciones de institución inactiva o cuota excedida (GET y POST).
+  - Incluye overlay visual de vectores faciales (solo UI, no modifica la imagen enviada al backend).
+  - Al encontrar coincidencia:
+    - oculta cámara en vivo.
+    - muestra foto registrada de la persona (`photo_url`) en la región de video.
+  - Si no hay coincidencia:
+    - oculta cámara en vivo.
+    - muestra mensaje de "No coincidencia" en la región de video.
+  - Botones:
+    - `Validar`: dispara análisis facial.
+    - `Aceptar`: restablece estado y vuelve a mostrar la cámara para nueva captura.
