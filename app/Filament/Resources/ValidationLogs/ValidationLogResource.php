@@ -20,6 +20,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
 class ValidationLogResource extends Resource
@@ -119,7 +120,9 @@ class ValidationLogResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                SelectFilter::make('institution_id')
+                    ->relationship('institution', 'name')
+                    ->label('Institución'),
             ])
             ->recordActions([
                 Action::make('view_response')
