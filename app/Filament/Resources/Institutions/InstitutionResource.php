@@ -235,6 +235,12 @@ class InstitutionResource extends Resource
                     ->color('success')
                     ->openUrlInNewTab()
                     ->url(fn(Institution $record) => route('validate', ['uuid' => $record->uuid])),
+                Action::make('institution_info')
+                    ->label('Info')
+                    ->icon('heroicon-m-information-circle')
+                    ->color('info')
+                    ->openUrlInNewTab()
+                    ->url(fn(Institution $record) => route('institution.show', ['slug' => $record->slug])),
                 EditAction::make()
                     ->url(fn(Institution $record) => static::getUrl('edit', ['record' => $record->id])),
             ])
