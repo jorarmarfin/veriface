@@ -7,7 +7,7 @@ Route::get('/', function () {
 });
 
 Route::get('/validate/{uuid}',[App\Http\Controllers\Validate\ValidateController::class, 'index'])->name('validate');
-Route::post('/validate/{uuid}/analyze',[App\Http\Controllers\Validate\ValidateController::class, 'analyzeFace'])->name('validate.analyze');
+Route::post('/validate/{uuid}/analyze',[App\Http\Controllers\Validate\ValidateController::class, 'analyzeFace'])->middleware('throttle:20,1')->name('validate.analyze');
 
 Route::get('/i/{slug}', [\App\Http\Controllers\Institution\InstitutionController::class, 'show'])->name('institution.show');
 
@@ -34,4 +34,6 @@ Route::get('/export/validation-logs', function (Illuminate\Http\Request $request
     );
 })->name('validation-logs.export')->middleware('web');
 
-Route::get('logs', [\Rap2hpoutre\LaravelLogViewer\LogViewerController::class, 'index']);
+
+// Alias para el middleware 'auth' (log-monitor): reutiliza el login de Filament.
+Route::redirect('/login', '/admin/login')->name('login');

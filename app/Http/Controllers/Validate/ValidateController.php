@@ -137,7 +137,7 @@ class ValidateController extends Controller
                 collectionId: $collection->collection_id,
                 imageData: $imageData,
                 isBase64: true,
-                faceMatchThreshold: 80,
+                faceMatchThreshold: config('services.face.match_threshold'),
                 maxFaces: 5
             );
 
@@ -292,11 +292,11 @@ class ValidateController extends Controller
                 'message' => 'Institución no encontrada',
             ], 404);
         } catch (\Exception $e) {
+            report($e);
 
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
-                'debug' => config('app.debug') ? $e->getTraceAsString() : null,
+                'message' => config('app.debug') ? $e->getMessage() : 'Error interno al procesar la validación',
             ], 500);
         }
     }
