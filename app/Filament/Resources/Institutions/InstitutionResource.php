@@ -229,6 +229,26 @@ class InstitutionResource extends Resource
                     ->action(function (Institution $record) {
                         self::indexInstitutionPhotos($record);
                     }),
+                Action::make('api_key')
+                    ->label('Clave API')
+                    ->icon('heroicon-m-key')
+                    ->color('gray')
+                    ->requiresConfirmation()
+                    ->modalHeading('Generar clave API (cliente desktop)')
+                    ->modalDescription(fn (Institution $record) => $record->api_key_hash
+                        ? 'Ya existe una clave. Generar otra invalida la anterior.'
+                        : 'Se generará una clave nueva. Se mostrará una sola vez.')
+                    ->modalSubmitActionLabel('Generar')
+                    ->action(function (Institution $record) {
+                        $key = $record->generateApiKey();
+
+                        Notification::make()
+                            ->title('Clave API generada — cópiala ahora')
+                            ->body($key)
+                            ->success()
+                            ->persistent()
+                            ->send();
+                    }),
                 Action::make('url_validation')
                     ->label('Validación')
                     ->icon('heroicon-m-shield-check')

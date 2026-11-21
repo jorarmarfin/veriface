@@ -21,6 +21,8 @@ class Institution extends Model
         'filepath',
         'rekognition_collection_id',
         'is_active',
+        'api_key_hash',
+        'api_key_generated_at',
         'validations_contracted',
         'validations_used',
     ];
@@ -34,11 +36,42 @@ class Institution extends Model
     {
         return [
             'is_active' => 'boolean',
+            'api_key_generated_at' => 'datetime',
             'validations_contracted' => 'integer',
             'validations_used' => 'integer',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];
+    }
+
+    protected $hidden = ['api_key_hash'];
+
+    /**
+     * Genera una nueva api_key. Devuelve el valor en claro (solo se muestra una vez);
+     * en BD se guarda únicamente su hash SHA-256.
+     */
+    public function generateApiKey(): string
+    {
+        $plain = 'vf_' . \Illuminate\Support\Str::random(40);
+
+        $this->forceFill([
+            'api_key_hash' => hash('sha256', $plain),
+            'api_key_generated_at' => now(),
+        ])->save();
+
+        return $plain;
+    }
+
+    public function revokeApiKey(): void
+    {
+        $this->forceFill(['api_key_hash' => null, 'api_key_generated_at' => null])->save();
+    }
+
+    public function checkApiKey(string $plain): bool
+    {
+        return $plain !== ''
+            && $this->api_key_hash !== null
+            && hash_equals($this->api_key_hash, hash('sha256', $plain));
     }
 
     /**
