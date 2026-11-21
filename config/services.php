@@ -35,6 +35,9 @@ return [
         ],
     ],
 
+    // Correos con acceso al panel admin y al visor de logs (separados por coma). Vacío = nadie.
+    'admin_emails' => array_filter(array_map('trim', explode(',', (string) env('ADMIN_EMAILS', '')))),
+
     'face' => [
         'match_threshold' => (float) env('FACE_MATCH_THRESHOLD', 90),
     ],

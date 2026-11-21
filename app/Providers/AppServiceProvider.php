@@ -20,7 +20,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Visor de logs (luiscamp/laravel-log-monitor): solo usuarios autenticados del panel
-        Gate::define('viewLaravelLogs', fn ($user) => $user !== null);
+        // Visor de logs (luiscamp/laravel-log-monitor): solo administradores (ADMIN_EMAILS)
+        Gate::define('viewLaravelLogs', fn ($user) => $user?->isAdmin() === true);
     }
 }

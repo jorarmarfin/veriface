@@ -12,7 +12,7 @@ Route::post('/validate/{uuid}/analyze',[App\Http\Controllers\Validate\ValidateCo
 Route::get('/i/{slug}', [\App\Http\Controllers\Institution\InstitutionController::class, 'show'])->name('institution.show');
 
 Route::get('/export/validation-logs', function (Illuminate\Http\Request $request) {
-    abort_unless(auth()->check(), 403);
+    abort_unless(auth()->user()?->isAdmin(), 403);
 
     $institution = \App\Models\Institution::findOrFail($request->integer('institution_id'));
 
